@@ -1,27 +1,32 @@
-# Gui Cutter — Android Starter
+# Gui Cutter
 
-Kotlin Android shell + bundled HTML/CSS/JavaScript WebView. This is infrastructure only, **not yet a UI cutter**.
+A self-contained Android screenshot UI cutter using Kotlin + a packaged JavaScript WebView editor. Supports Android 10 and newer. **The whole image is the workspace:** floating tools and expandable panels cover it only when needed.
 
-## What works
+## Features
 
-- Launches an offline, browser-testable WebView interface.
-- Choose an Android Documents folder, remember access, and test a short file write.
-- Check the **public** `mrtherichart/Gui-Cutter` GitHub Releases for a newer APK, download and open the system installer.
-- Keep optional rotating native and JavaScript diagnostics; export a log using Android's file picker.
-- Build a debug APK from `main`, and a signed GitHub Release from the explicit **Publish signed release** workflow option, using one Actions workflow.
+- Normal PNG crops and 9-slice assets (one PNG plus four margins in the JSON manifest)
+- Rectangle creation, selection, resizing, moving, renaming, deletion and integer property editing
+- Direction-aware weighted edge snapping, visual edge overlay, nearest-neighbour preview
+- Two-finger pinch/zoom/pan, one-finger tool modes, a dedicated move grip and screen-size touch handles
+- Undo/redo history (128 snapshots), unsaved badge and manual Save Sync
+- Local recovery drafts, responsive floating interface, full-screen Clean Canvas mode
+- Native Android folder picker, persistent folder access, project file inspection and opening exports
+- In-app GitHub Release APK updates, exportable rotating diagnostics, settings and developer panel
 
-## Put it on GitHub
+## Workflow
 
-Upload the **contents** of this folder (not the ZIP itself) to `mrtherichart/Gui-Cutter` on the `main` branch. Do not upload `.private/`, keys, or passwords. GitHub Actions produces a debug APK under the run's **Artifacts**. For production, launch **Actions → Android APK → Run workflow** and enable **Publish signed release**.
+1. Install the signed [GitHub Release](https://github.com/mrtherichart/Gui-Cutter/releases/latest).
+2. Open **Files** and choose a workspace folder under Documents or another location allowed by Android.
+3. Import an image. Gui Cutter stores it as **base.png**.
+4. Draw crops using **New**. Use **Edit** for selected outlines/handles and the middle move grip. Use two fingers to pan/zoom at any time.
+5. Tap **Save** to write `ui_slices.json` and the PNG crops to `exports/`. These are ordinary files accessible from Android's file manager.
 
-For signed releases, follow [docs/RELEASE.md](docs/RELEASE.md). Set up signing **before installing the first release**, and keep the keystore safe: all later APKs must use the exact same signing certificate and `applicationId`.
+Imported desktop `ui_slices.json` files are supported. The desktop `image_path` field is ignored in favor of the project's local `base.png`. Nine-slice margins remain `left`, `top`, `right`, `bottom` in the manifest.
 
 ## Development
 
-- No web server, npm, backend, or external UI library required.
-- To preview the web interface: open `app/src/main/assets/index.html` in a desktop/mobile browser. Native buttons are intentionally inert there.
-- Android builds use JDK 17, Gradle 8.11.1 and Android SDK 35 (`gradle :app:assembleDebug`). GitHub Actions provides these automatically.
-- JS editing takes place in `app/src/main/assets/`; Kotlin under `app/src/main/java/...` is limited to Android-specific work.
-- Set `devLogs=false` in `gradle.properties` when development logs should be quiet in release builds.
+Edit HTML/CSS/JS in `app/src/main/assets/` and Kotlin in `app/src/main/java/...`. Browser test the UI by serving `assets/` locally. Run JS tests with `node --test tests/*.test.mjs`. No JS package manager or frontend framework is required.
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the deliberately small module boundaries.
+The `main` branch is the working release source. Its GitHub Actions workflow runs JS and Android tests, builds a **signed** APK and publishes it as the official release when `appVersion` changes. Keep the original signing keystore and the two GitHub secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`) for every update. Do not make a new keystore. See `docs/RELEASE.md`.
+
+The mobile editor is not the original Python Qt code; the model and export format are compatible. Browser-mode Save downloads PNGs individually plus a manifest, while Android uses a native folder and file exporter.

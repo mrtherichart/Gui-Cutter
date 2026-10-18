@@ -1,9 +1,9 @@
-# Android releases
+# Signed release workflow
 
-Builds run on pushes to main. GitHub Actions publishes a debug APK under the build run's artifacts. To publish a signed release, open Actions > Android APK > Run workflow and enable Publish signed release. The workflow uses the version in gradle.properties, checks whether the version tag already exists, builds and verifies the signed APK, and publishes Gui-Cutter.apk.
+A single GitHub Actions workflow runs on pushes to `main` and on manual dispatch. It runs JS and Android tests and lint, builds one **signed** APK, verifies it, then publishes the new version as a GitHub Release. No separate development APK, password page, updater server or emulator is required for routine source changes.
 
-Configure two GitHub Actions repository secrets under Settings > Secrets and variables > Actions: ANDROID_KEYSTORE_BASE64 (Base64 encoding of the PKCS12 keystore file) and ANDROID_KEYSTORE_PASSWORD (the store and key password). Key alias: guicutter. Keystore must be PKCS12, RSA 3072-bit or stronger. Keep a private backup of the keystore and its password. NEVER add either to the public repository.
+The version is configured in `gradle.properties` as `appVersion=0.1.0`, with a deterministic Android versionCode. Increase it for each published version; GitHub will refuse a duplicate version tag instead of rebuilding endlessly.
 
-Increase appVersion in gradle.properties before each subsequent release. APK upgrades require the same application ID, signing certificate and a larger versionCode. The debug APK uses a different key and cannot update the signed release. Play Protect checks are controlled by Android.
+The repository needs the existing **same** GitHub Actions secrets that signed v0.0.1: `ANDROID_KEYSTORE_BASE64` and `ANDROID_KEYSTORE_PASSWORD`. The key alias is `guicutter`. **Never regenerate or publish the keystore.** Android updates are only accepted for the same package ID (`nl.mrtherich.guicutter`) and certificate.
 
-Development logs are available with Export log. Do not retry failed builds blindly; inspect the first failing workflow step.
+Download the official APK from GitHub Releases, then open it using Android's package installer. Future versions can be checked and downloaded from the Settings drawer in the app. Logs can be exported from Settings > Developer. If the build fails, inspect the first failing step and fix that cause, rather than repeatedly rerunning it.

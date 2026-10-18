@@ -1,33 +1,52 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none';" />
-  <title>Gui Cutter</title>
-  <link rel="stylesheet" href="app.css" />
-  <script src="app.js" defer></script>
-</head>
-<body>
-  <main class="shell">
-    <header class="topbar">
-      <div class="brand"><span class="mark" aria-hidden="true"></span><div><b>Gui Cutter</b><small>Android starter</small></div></div>
-      <span class="version" id="version">—</span>
-    </header>
-    <section class="workspace" aria-label="Editor canvas placeholder">
-      <div class="empty-canvas">
-        <div class="cut-symbol" aria-hidden="true"><span></span></div>
-        <h1>Editor workspace</h1>
-        <p>Canvas and cutting tools come next. The native Android foundation is ready to test.</p>
-      </div>
-    </section>
-    <section class="tools" aria-label="Android foundation controls">
-      <div class="tool-title"><h2>Project files</h2><span id="folder">No folder chosen</span></div>
-      <div class="actions"><button id="choose-folder">Choose folder</button><button class="secondary" id="test-folder">Test writing</button></div>
-      <div class="tool-title"><h2>App</h2><span id="logs-state">Diagnostics enabled</span></div>
-      <div class="actions"><button id="check-update">Check updates</button><button id="install-update" class="secondary" hidden>Install update</button><button id="export-log" class="secondary">Export log</button></div>
-      <p id="status" class="status" role="status" aria-live="polite">Starting…</p>
-    </section>
+<html lang="en"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'">
+  <meta name="theme-color" content="#253e4e">
+  <title>Gui Cutter</title><link rel="stylesheet" href="app.css">
+</head><body>
+  <main id="workspace" class="workspace">
+    <canvas id="editor" aria-label="Image cutting canvas"></canvas>
+    <div id="empty" class="empty"><div class="empty-icon">▧</div><h1>Gui Cutter</h1><p>Select a project folder and import a screenshot to begin.</p><button id="empty-open" class="primary">Open project</button><button id="empty-image" class="secondary">Open image</button></div>
+    <div id="controls">
+      <div class="float top-left"><button id="project-btn" title="Project" aria-label="Open project menu">☰</button><button id="project-title" class="project-title" title="Project files">No project</button><span id="dirty" class="dirty" hidden title="Unsaved edits">●</span></div>
+      <div class="float top-right"><button id="undo" title="Undo" aria-label="Undo">↶</button><button id="redo" title="Redo" aria-label="Redo">↷</button><button id="save" class="primary" title="Save crops and manifest">Save</button></div>
+      <nav class="float left-rail" aria-label="Canvas tools"><button data-mode="navigate" title="Pan image">✋<small>Pan</small></button><button data-mode="edit" class="active" title="Select, move and resize">⌖<small>Edit</small></button><button data-mode="new" title="Draw new crop">▣<small>New</small></button><button id="new-kind" title="Crop type" class="kind">Normal ▾</button></nav>
+      <nav class="float right-rail" aria-label="Workspace tools"><button id="zoom-plus" title="Zoom in">+</button><span id="zoom-label" title="Current zoom">100%</span><button id="zoom-minus" title="Zoom out">−</button><button id="fit" title="Fit image">Fit</button><div class="rule"></div><button id="snap" title="Toggle edge snapping">◈</button><button id="assets-btn" title="Asset list">▤</button><button id="properties-btn" title="Properties">⚙</button></nav>
+      <div id="selection-strip" class="float selection-strip" hidden><button id="selection-info" title="Edit coordinates"><strong id="selection-name"></strong><span id="selection-size"></span></button><button id="quick-preview" title="Preview selection">◧</button><button id="quick-nudge" title="Pixel precision">✥</button></div>
+      <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+      <button id="clean-restore" class="clean-restore" hidden title="Restore editor controls">Show tools</button>
+    </div>
+    <div id="shade" class="shade" hidden></div>
+    <aside id="drawer" class="drawer" hidden aria-label="Editor panel">
+      <header class="drawer-header"><div class="drawer-tabs"><button data-tab="assets">Assets</button><button data-tab="properties">Properties</button><button data-tab="preview">Preview</button><button data-tab="files">Files</button><button data-tab="settings">Settings</button></div><button id="close-drawer" title="Close panel">×</button></header>
+      <section id="tab-assets" class="tab-pane"><p class="minor">Tap an asset to select it. Swipe the list to scroll.</p><div id="asset-list" class="asset-list"></div><div class="row"><button id="new-from-list">+ New crop</button><button id="rename" class="secondary">Rename</button><button id="delete" class="danger">Delete</button></div></section>
+      <section id="tab-properties" class="tab-pane" hidden><p id="props-none" class="minor">Select a crop on the canvas or in Assets.</p><div id="props-fields"><label class="field"><span>Asset name</span><input id="prop-name" type="text" maxlength="120" autocapitalize="off" spellcheck="false"></label><label class="field"><span>Type</span><select id="prop-kind"><option value="normal">Normal crop</option><option value="nine_slice">Nine-slice</option></select></label><div id="numeric-grid" class="number-grid"></div><button id="apply-props" class="primary wide">Apply values</button></div></section>
+      <section id="tab-preview" class="tab-pane" hidden><div id="preview-label" class="minor">Select an asset</div><div class="preview-box"><canvas id="preview"></canvas></div><label class="switch"><input id="explode-preview" type="checkbox"> Exploded nine-slice preview</label><p class="minor">Nine-slice exports are one PNG with margins stored in ui_slices.json.</p></section>
+      <section id="tab-files" class="tab-pane" hidden><div class="label-line"><strong>Project folder</strong><span id="folder-name">No folder selected</span></div><div class="row"><button id="choose-folder" class="primary">Choose folder</button><button id="open-image">Import image</button></div><div class="row"><button id="reload-project">Reload saved</button><button id="inspect-files">Refresh files</button></div><div id="file-list" class="file-list"></div><p class="minor">Android projects use base.png, ui_slices.json and exports/ in your selected folder. Saving is manual.</p></section>
+      <section id="tab-settings" class="tab-pane" hidden>
+        <h2>Editor</h2>
+        <label class="switch"><input data-setting="edgeSnap" type="checkbox"> Smart edge snapping</label>
+        <label class="switch"><input data-setting="showEdges" type="checkbox"> Show detected edges</label>
+        <label class="switch"><input data-setting="hideUnselected" type="checkbox"> Hide unselected crop outlines</label>
+        <label class="switch"><input data-setting="labels" type="checkbox"> Canvas asset labels</label>
+        <label class="switch"><input data-setting="checkerboard" type="checkbox"> Transparency checkerboard</label>
+        <label class="switch"><input data-setting="magnifier" type="checkbox"> Precision magnifier while dragging</label>
+        <label class="switch"><input data-setting="explodeNine" type="checkbox"> Exploded nine-slice preview</label>
+        <label class="field"><span>New crop type</span><select id="setting-kind"><option value="normal">Normal crop</option><option value="nine_slice">Nine-slice</option></select></label>
+        <button id="clean-canvas">Clean canvas</button>
+        <h2>Application</h2><div class="label-line"><span>Version</span><strong id="app-version">Browser</strong></div><div class="label-line"><span>Workspace</span><span id="app-folder">—</span></div>
+        <div class="row"><button id="check-update">Check updates</button><button id="install-update" class="primary" hidden>Install update</button></div><div id="update-status" class="minor"></div>
+        <h2>Developer & diagnostics</h2><div class="label-line"><span>Native logs</span><strong id="log-state">Browser mode</strong></div>
+        <div class="row"><button id="export-log">Export native log</button><button id="test-folder">Test folder access</button></div>
+        <div class="row"><button id="copy-diagnostics">Copy diagnostics</button><button id="clear-draft" class="secondary">Clear recovery draft</button></div>
+        <pre id="diagnostics" class="diagnostics"></pre>
+      </section>
+    </aside>
+    <div id="kind-menu" class="popup" hidden><button data-kind="normal">Normal crop</button><button data-kind="nine_slice">Nine-slice crop</button></div>
+    <div id="nudge-panel" class="nudge-panel" hidden><div class="nudge-header"><b>Pixel adjustment</b><button id="close-nudge">×</button></div><div class="nudge-grid"><span></span><button data-nudge="0,-1">↑</button><span></span><button data-nudge="-1,0">←</button><button id="nudge-unit">1 px</button><button data-nudge="1,0">→</button><span></span><button data-nudge="0,1">↓</button><span></span></div></div>
+    <div id="magnifier" class="magnifier" hidden><canvas id="magnify-canvas" width="140" height="140"></canvas><span id="magnify-label"></span></div>
+    <input id="browser-image" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" hidden><input id="browser-manifest" type="file" accept="application/json,.json" hidden>
   </main>
-</body>
-</html>
+  <script type="module" src="app.mjs"></script>
+</body></html>
