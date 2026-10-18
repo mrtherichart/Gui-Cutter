@@ -4,9 +4,16 @@ import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle,
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
 const settingsKey='gui-cutter.preferences.v1';
-const defaults={edgeSnap:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',reduceGlass:false};
+const defaults={edgeSnap:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true};
 let settings={...defaults};
-try{settings={...settings,...JSON.parse(localStorage.getItem(settingsKey)||'{}')};}catch{}
+try{
+  const saved=JSON.parse(localStorage.getItem(settingsKey)||'{}');
+  settings={...settings,...saved};
+  // Migrate the former binary Reduce Transparency toggle without a visual jump.
+  if(!Number.isFinite(Number(saved.glassTransparency)) && saved.reduceGlass){settings.glassTransparency=7;settings.glassBlur=6;}
+}catch{}
+settings.glassTransparency=Math.round(Math.max(0,Math.min(65,Number(settings.glassTransparency)||0)));
+settings.glassBlur=Math.round(Math.max(0,Math.min(36,Number(settings.glassBlur)||0)));
 const state={project:new Project(),view:new Viewport(),image:null,edges:null,overlay:null,mode:'edit',pointers:new Map(),gesture:null,gestureData:null,previewRect:null,snapPoint:null,busy:false,tab:'assets',projectKey:'browser',nativeInfo:null,toastTimer:0,draftTimer:0,imageSeq:0,nudge:1,canvasDpr:1,lastStatus:'Ready',imageLoaded:false,pendingSave:null,lastNavigationTap:null};
 const ctx=$('editor').getContext('2d');
 const appCtx=()=>({iw:state.image?.naturalWidth||0,ih:state.image?.naturalHeight||0});
@@ -34,7 +41,19 @@ function updateButtons(){
 }
 function refreshUI(){updateButtons();renderList();renderProperties();renderPreview();scheduleDraw();}
 function resolvedTheme(){return settings.theme==='dark'||(settings.theme==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light';}
-function applyAppearance(){document.documentElement.dataset.theme=resolvedTheme();document.documentElement.dataset.reducedGlass=String(!!settings.reduceGlass);}
+function applyAppearance(){
+  const root=document.documentElement;
+  root.dataset.theme=resolvedTheme();root.dataset.motion=settings.smoothMotion?'on':'off';
+  root.style.setProperty('--glass-alpha',String((100-settings.glassTransparency)/100));
+  root.style.setProperty('--glass-blur',settings.glassBlur+'px');
+  $('glass-opacity').value=String(settings.glassTransparency);
+  $('glass-blur').value=String(settings.glassBlur);
+  $('glass-opacity-value').textContent=settings.glassTransparency+'%';
+  $('glass-blur-value').textContent=settings.glassBlur+' px';
+  for(const id of ['glass-opacity','glass-blur']){
+    const el=$(id);el.style.setProperty('--fill',(100*(el.valueAsNumber-Number(el.min))/(Number(el.max)-Number(el.min)))+'%');
+  }
+}
 function saveSettings(){localStorage.setItem(settingsKey,JSON.stringify(settings));applyAppearance();for(const el of document.querySelectorAll('[data-setting]'))el.checked=!!settings[el.dataset.setting];$('setting-kind').value=settings.newKind;$('setting-theme').value=settings.theme;$('explode-preview').checked=settings.explodeNine;updateButtons();scheduleDraw();}
 function drawSelectionThumb(asset){
   const canvas=$('selection-thumb');if(!state.image||!asset)return;
@@ -53,15 +72,50 @@ function clearDraft(){try{localStorage.removeItem('gui-cutter.draft.'+state.proj
 function change(){state.project.commit();refreshUI();scheduleDraft();}
 function selectIndex(i){state.project.selected=i;refreshUI();}
 function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}state.mode=mode;state.previewRect=null;state.gesture=null;updateButtons();scheduleDraw();}
+const applicationTabs=new Set(['files','settings','developer']);
+function isAnyDrawerOpen(){return $('app-drawer').classList.contains('is-open')||$('drawer').classList.contains('is-open');}
+function bottomTabVisible(tab){return $('drawer').classList.contains('is-open')&&state.tab===tab;}
 function openTab(tab){
   if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}
-  state.tab=tab;$('drawer').hidden=false;$('shade').hidden=false;
+  const app=applicationTabs.has(tab);
+  state.tab=tab;
+  for(const id of ['app-drawer','drawer']){
+    const el=$(id),open=app?(id==='app-drawer'):(id==='drawer');
+    el.classList.toggle('is-open',open);el.setAttribute('aria-hidden',String(!open));
+  }
+  $('shade').classList.add('is-open');
   for(const el of document.querySelectorAll('.tab-pane'))el.hidden=el.id!=='tab-'+tab;
   for(const el of document.querySelectorAll('[data-tab]'))el.classList.toggle('current',el.dataset.tab===tab);
-  if(tab==='files')inspectFiles();if(tab==='settings')refreshStatus();refreshUI();
+  if(tab==='files')inspectFiles();if(tab==='settings'||tab==='developer')refreshStatus();
+  if(!app){$('nudge-panel').hidden=true;}
+  refreshUI();
 }
-function closeTab(){$('drawer').hidden=true;$('shade').hidden=true;}
+function closeTab(){
+  $('drawer').classList.remove('is-open');$('app-drawer').classList.remove('is-open');$('shade').classList.remove('is-open');
+  $('drawer').setAttribute('aria-hidden','true');$('app-drawer').setAttribute('aria-hidden','true');
+  $('drawer').style.transform='';$('drawer').style.transition='';
+}
 function cleanCanvas(yes){document.body.classList.toggle('clean',yes);$('clean-restore').hidden=!yes;closeTab();}
+function bindSheetGesture(){
+  const grip=$('sheet-grip'),sheet=$('drawer');let finger=null;
+  grip.addEventListener('pointerdown',e=>{
+    if(!sheet.classList.contains('is-open')||finger!==null)return;
+    finger={id:e.pointerId,start:e.clientY,delta:0};grip.setPointerCapture(e.pointerId);
+    sheet.style.transition='none';e.preventDefault();
+  });
+  grip.addEventListener('pointermove',e=>{
+    if(!finger||e.pointerId!==finger.id)return;
+    finger.delta=Math.max(0,e.clientY-finger.start);
+    sheet.style.transform=`translate3d(-50%,${finger.delta}px,0)`;
+    e.preventDefault();
+  });
+  function finish(e){if(!finger||e.pointerId!==finger.id)return;
+    const delta=finger.delta;finger=null;sheet.style.transition='';sheet.style.transform='';
+    if(e.type!=='pointercancel'&&delta>65)closeTab();
+  }
+  grip.addEventListener('pointerup',finish);grip.addEventListener('pointercancel',finish);
+  grip.addEventListener('keydown',e=>{if(e.key==='Escape'||e.key==='Enter'||e.key===' '){e.preventDefault();closeTab();}});
+}
 function createModal({title,initial='',message='',question=false}){
   return new Promise(resolve=>{
     const dlg=document.createElement('dialog');dlg.className='modal-dialog';
@@ -175,7 +229,7 @@ function buildOverlay(){if(!state.edges||!state.image)return;const {iw,ih}=appCt
   try{const temp=document.createElement('canvas');temp.width=iw;temp.height=ih;const cx=temp.getContext('2d');const id=cx.createImageData(iw,ih);for(let i=0;i<state.edges.length;i++)if(state.edges[i]){const j=i*4;id.data[j]=87;id.data[j+1]=215;id.data[j+2]=255;id.data[j+3]=110;}cx.putImageData(id,0,0);state.overlay=temp;scheduleDraw();}
   catch(e){settings.showEdges=false;saveSettings();errorMessage(e);}
 }
-function renderList(){const panel=$('asset-list');if($('drawer').hidden||state.tab!=='assets')return;panel.replaceChildren();
+function renderList(){const panel=$('asset-list');if(!bottomTabVisible('assets'))return;panel.replaceChildren();
   for(let i=0;i<state.project.assets.length;i++){const a=state.project.assets[i],btn=document.createElement('button');btn.className='asset-item'+(state.project.selected===i?' active':'');
     const title=document.createElement('span'),name=document.createElement('strong'),dim=document.createElement('small'),kind=document.createElement('span');name.textContent=a.asset_id;dim.textContent=`${a.w} × ${a.h} · ${a.x},${a.y}`;title.append(name,dim);
     kind.textContent=a.kind==='nine_slice'?'9-slice':'Normal';kind.className='asset-kind';btn.append(title,kind);btn.addEventListener('click',()=>selectIndex(i));panel.append(btn);}
@@ -187,9 +241,9 @@ function createNumericControls(){for(const key of Object.keys(labels)){const out
     const minus=document.createElement('button');minus.textContent='−';minus.type='button';minus.addEventListener('click',()=>nudgeField(key,-1));
     const input=document.createElement('input');input.type='number';input.step='1';input.id='prop-'+key;input.inputMode='numeric';
     const plus=document.createElement('button');plus.textContent='+';plus.type='button';plus.addEventListener('click',()=>nudgeField(key,1));
-    row.append(minus,input,plus);outer.append(label,row);$('numeric-grid').append(outer);}}
-function renderProperties(){if($('drawer').hidden||state.tab!=='properties')return;const a=state.project.active;$('props-none').hidden=!!a;$('props-fields').hidden=!a;if(!a)return;
-  $('prop-name').value=a.asset_id;$('prop-kind').value=a.kind;for(const key of Object.keys(labels)){$('prop-'+key).value=a[key];}
+    row.append(minus,input,plus);outer.append(label,row);$(['left','top','right','bottom'].includes(key)?'margin-grid':'numeric-grid').append(outer);}}
+function renderProperties(){if(!bottomTabVisible('properties'))return;const a=state.project.active;$('props-none').hidden=!!a;$('props-fields').hidden=!a;if(!a)return;
+  $('prop-name').value=a.asset_id;$('prop-kind').value=a.kind;$('nine-card').hidden=a.kind!=='nine_slice';for(const key of Object.keys(labels)){$('prop-'+key).value=a[key];}
   for(const el of document.querySelectorAll('.numeric-item'))el.hidden=a.kind==='normal'&&['left','right','top','bottom'].includes(el.dataset.key);
 }
 function nudgeField(key,step){const a=state.project.active;if(!a||state.busy)return;try{const next={...a,[key]:Number(a[key])+step};
@@ -201,7 +255,7 @@ function applyProps(){const a=state.project.active;if(!a||state.busy)return;cons
       changes.left=changes.right=Math.max(1,Math.floor(a.w/4));changes.top=changes.bottom=Math.max(1,Math.floor(a.h/4));}
     state.project.update(state.project.selected,changes);refreshUI();scheduleDraft();toast('Properties updated');}
   catch(e){errorMessage(e);}}
-function renderPreview(){if($('drawer').hidden||state.tab!=='preview')return;const canvas=$('preview'),a=state.project.active,container=canvas.parentElement;
+function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('preview'),a=state.project.active,container=canvas.parentElement;
   if(!a||!state.image){$('preview-label').textContent='Select a crop first';canvas.width=1;canvas.height=1;return;}
   const exploded=a.kind==='nine_slice'&&settings.explodeNine,gap=exploded?3:0;
   const sw=a.w+2*gap,sh=a.h+2*gap,ratio=Math.min(1,340/sw,Math.max(130,container.clientHeight-25)/sh);
@@ -234,7 +288,7 @@ function screenSnap(x,y,handle){const {iw,ih}=appCtx(),p=state.view.toImage(x,y)
   if(settings.edgeSnap)target=snap(state.edges,iw,ih,target.x,target.y,handle);
   state.snapPoint=target.found?target:null;return target;
 }
-function handlePointerDown(e){if(e.button!==0&&e.pointerType==='mouse')return;if(!$('drawer').hidden||state.busy)return;e.preventDefault();
+function handlePointerDown(e){if(e.button!==0&&e.pointerType==='mouse')return;if(isAnyDrawerOpen()||state.busy)return;e.preventDefault();
   try{$('editor').setPointerCapture(e.pointerId);}catch{}
   const point={x:e.clientX,y:e.clientY};state.pointers.set(e.pointerId,point);
   if(state.pointers.size===2)startPinch();else if(state.pointers.size===1)startSingle(point);
@@ -324,8 +378,16 @@ window.GuiCutterReceive=(type,data={})=>{
   }catch(e){errorMessage(e);}
 };
 
+window.GuiCutterHandleBack=()=>{
+  const dlg=document.querySelector('dialog[open]');if(dlg){dlg.close('cancel');return true;}
+  if(isAnyDrawerOpen()){closeTab();return true;}
+  if(!$('nudge-panel').hidden){$('nudge-panel').hidden=true;return true;}
+  if(document.body.classList.contains('clean')){cleanCanvas(false);return true;}
+  return false;
+};
+
 function bind(){
-  createNumericControls();saveSettings();sizeCanvas();window.addEventListener('resize',sizeCanvas);
+  createNumericControls();saveSettings();bindSheetGesture();sizeCanvas();window.addEventListener('resize',sizeCanvas);
   const themeMedia=window.matchMedia('(prefers-color-scheme:dark)');
   const followSystemTheme=()=>{if(settings.theme==='system'){applyAppearance();scheduleDraw();}};
   if(themeMedia.addEventListener)themeMedia.addEventListener('change',followSystemTheme);else themeMedia.addListener(followSystemTheme);
@@ -339,6 +401,10 @@ function bind(){
   $('explode-preview').addEventListener('change',e=>{settings.explodeNine=e.target.checked;saveSettings();renderPreview();});
   $('new-kind').addEventListener('click',()=>{settings.newKind='nine_slice';saveSettings();chooseMode('new');});
   $('setting-theme').addEventListener('change',e=>{settings.theme=e.target.value;saveSettings();});
+  for(const [id,key] of [['glass-opacity','glassTransparency'],['glass-blur','glassBlur']]){
+    $(id).addEventListener('input',e=>{settings[key]=e.target.valueAsNumber;applyAppearance();});
+    $(id).addEventListener('change',()=>saveSettings());
+  }
   $('project-btn').addEventListener('click',()=>openTab('files'));
   $('project-title').addEventListener('click',()=>openTab('files'));
   $('assets-btn').addEventListener('click',()=>openTab('assets'));$('properties-btn').addEventListener('click',()=>openTab('properties'));
@@ -348,7 +414,7 @@ function bind(){
   $('close-nudge').addEventListener('click',()=>{$('nudge-panel').hidden=true;});
   $('nudge-unit').addEventListener('click',()=>{state.nudge=state.nudge===1?10:1;$('nudge-unit').textContent=`${state.nudge} px`;});
   for(const el of document.querySelectorAll('[data-nudge]'))el.addEventListener('click',()=>{const [dx,dy]=el.dataset.nudge.split(',').map(Number);applyNudge(dx,dy);});
-  $('close-drawer').addEventListener('click',closeTab);$('shade').addEventListener('click',closeTab);
+  $('close-drawer').addEventListener('click',closeTab);$('close-app-drawer').addEventListener('click',closeTab);$('shade').addEventListener('click',closeTab);
   $('zoom-range').addEventListener('input',e=>zoomFromSlider(e.target.value));
   $('zoom-label').addEventListener('click',fitImage);$('fit').addEventListener('click',fitImage);
   $('snap').addEventListener('click',()=>{settings.edgeSnap=!settings.edgeSnap;saveSettings();toast(settings.edgeSnap?'Smart snap enabled':'Smart snap disabled');});

@@ -11,6 +11,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -122,6 +123,15 @@ class MainActivity : ComponentActivity() {
             systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
         }
+        onBackPressedDispatcher.addCallback(this, object:OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (!::webView.isInitialized) { finish(); return }
+                // The WebView gets first refusal: dismiss editing panels before leaving the app.
+                webView.evaluateJavascript("Boolean(window.GuiCutterHandleBack && window.GuiCutterHandleBack())") { handled ->
+                    if (handled != "true") finish()
+                }
+            }
+        })
         webView.loadUrl(HOME_URL)
     }
     fun statusPayload() = JSONObject()

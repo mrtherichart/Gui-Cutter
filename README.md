@@ -1,6 +1,6 @@
 # Gui Cutter
 
-A self-contained Android screenshot UI cutter using Kotlin + a packaged JavaScript WebView editor. Supports Android 10 and newer. **The whole image is the workspace:** floating tools and expandable panels cover it only when needed.
+A self-contained Android screenshot UI cutter using Kotlin + a packaged JavaScript WebView editor. Supports Android 10 and newer. **The whole image is the workspace:** floating tools and two task-specific drawers cover it only when needed.
 
 ## Features
 
@@ -11,18 +11,20 @@ A self-contained Android screenshot UI cutter using Kotlin + a packaged JavaScri
 - Undo/redo history (128 snapshots), unsaved badge and manual Save Sync
 - Local recovery drafts, floating translucent tool surfaces, compact selected-asset thumbnail, full-screen Clean Canvas mode
 - Native Android folder picker, persistent folder access, project file inspection and opening exports
-- Dark, light and system appearance, optional reduced transparency, full preferences and developer diagnostics
+- Daylight, night and system appearance, adjustable glass transparency and blur, motion preferences, and native developer diagnostics
 - In-app GitHub Release APK updates and exportable rotating logs
 
 ## Workflow
 
 1. Install the signed [GitHub Release](https://github.com/mrtherichart/Gui-Cutter/releases/latest).
-2. Open **Files** and choose a workspace folder under Documents or another location allowed by Android.
+2. Open the **left application drawer → Workspace** and choose a workspace folder under Documents or another location allowed by Android.
 3. Import an image. Gui Cutter stores it as **base.png**.
 4. The left rail has **Pan**, **Edit**, **New rectangle**, and **New nine-slice**. Drag the image to create crops, then use handles or the central move grip in Edit mode. Use two fingers to pan/zoom at any time. Double-tap while using Pan to fit the image.
-5. The bottom glass bar has **Fit**, the zoom slider, zoom percentage, **Snap**, and **Assets**. Tap the selected-asset strip for its properties; it also offers pixel nudging. Tap the Save icon in the top bar to write `ui_slices.json` and PNG crops to `exports/`. These are ordinary files accessible from Android's file manager.
+5. The bottom glass bar has **Fit**, the zoom slider, zoom percentage, **Snap**, and **Assets**. Assets opens the bottom details sheet; tap the selected-asset strip to open **Inspector**, which also offers pixel nudging. Tap the Save icon in the top bar to write `ui_slices.json` and PNG crops to `exports/`. These are ordinary files accessible from Android's file manager.
 
-Appearance lives under **Project → Settings → Appearance**. Choose System, Dark or Light; Reduce transparency disables blur for slow WebViews. The full-screen work area itself remains sharp and unfiltered.
+**Navigation:** The top-left menu opens the **left application drawer** (Workspace, Preferences and Developer). The selected asset and Assets button open the **bottom details sheet** (Assets, Inspector and Preview). Pull the sheet down by its grip or tap outside either drawer to close it; Android Back closes an open panel first.
+
+**Appearance:** Open **Menu → Preferences** to choose Follow system, Night or Daylight and set separate live **Transparency (0–65%)** and **Blur intensity (0–36 px)** sliders. Glass sliders affect UI surfaces only; the source image stays pixel-sharp. Smooth motion can be disabled independently and the device’s reduced-motion preference is respected.
 
 Imported desktop `ui_slices.json` files are supported. The desktop `image_path` field is ignored in favor of the project's local `base.png`. Nine-slice margins remain `left`, `top`, `right`, `bottom` in the manifest.
 
