@@ -28,11 +28,11 @@ jobs:
         with:
           node-version: '22'
       - name: Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
       - name: SDK 35
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Gradle 8.11.1
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '8.11.1'
       - name: JavaScript unit tests
@@ -70,7 +70,7 @@ jobs:
           cp "$APK" Gui-Cutter.apk
           sha256sum Gui-Cutter.apk > Gui-Cutter.apk.sha256
       - name: Publish signed GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ env.RELEASE_VERSION }}
           target_commitish: ${{ github.sha }}
