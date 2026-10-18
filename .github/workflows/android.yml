@@ -1,0 +1,95 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: 'Publish a signed GitHub Release (appVersion in gradle.properties)'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required only when explicitly publishing a signed release.
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+      - name: Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+      - name: SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.11.1'
+      - name: Unit tests and lint
+        run: gradle --no-daemon :app:testDebugUnitTest :app:lintDebug
+      - name: Build debug APK
+        if: ${{ inputs.publish_release != true }}
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Upload debug APK
+        if: ${{ inputs.publish_release != true }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Gui-Cutter-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+      - name: Validate version and signing secrets
+        if: ${{ inputs.publish_release == true }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^appVersion=//p' gradle.properties)"
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'ERROR: invalid appVersion'; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" > /dev/null; then
+            echo 'ERROR: This version already exists. Increase appVersion before publishing.'; exit 1
+          fi
+          test -n "${KEYSTORE_BASE64}" || { echo 'ERROR: missing ANDROID_KEYSTORE_BASE64'; exit 1; }
+          test -n "${KEYSTORE_PASSWORD}" || { echo 'ERROR: missing ANDROID_KEYSTORE_PASSWORD'; exit 1; }
+          printf '%s' "${KEYSTORE_BASE64}" | base64 --decode > "${RUNNER_TEMP}/guicutter.jks"
+          echo "ANDROID_KEYSTORE_FILE=${RUNNER_TEMP}/guicutter.jks" >> "${GITHUB_ENV}"
+          echo "RELEASE_VERSION=${VERSION}" >> "${GITHUB_ENV}"
+      - name: Build signed release APK
+        if: ${{ inputs.publish_release == true }}
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+      - name: Verify signing and package
+        if: ${{ inputs.publish_release == true }}
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          cp "$APK" Gui-Cutter.apk
+          sha256sum Gui-Cutter.apk > Gui-Cutter.apk.sha256
+      - name: Publish GitHub Release
+        if: ${{ inputs.publish_release == true }}
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ env.RELEASE_VERSION }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            Gui-Cutter.apk
+            Gui-Cutter.apk.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          make_latest: true

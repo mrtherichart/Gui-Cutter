@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none';" />
+  <title>Gui Cutter</title>
+  <link rel="stylesheet" href="app.css" />
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="mark" aria-hidden="true"></span><div><b>Gui Cutter</b><small>Android starter</small></div></div>
+      <span class="version" id="version">—</span>
+    </header>
+    <section class="workspace" aria-label="Editor canvas placeholder">
+      <div class="empty-canvas">
+        <div class="cut-symbol" aria-hidden="true"><span></span></div>
+        <h1>Editor workspace</h1>
+        <p>Canvas and cutting tools come next. The native Android foundation is ready to test.</p>
+      </div>
+    </section>
+    <section class="tools" aria-label="Android foundation controls">
+      <div class="tool-title"><h2>Project files</h2><span id="folder">No folder chosen</span></div>
+      <div class="actions"><button id="choose-folder">Choose folder</button><button class="secondary" id="test-folder">Test writing</button></div>
+      <div class="tool-title"><h2>App</h2><span id="logs-state">Diagnostics enabled</span></div>
+      <div class="actions"><button id="check-update">Check updates</button><button id="install-update" class="secondary" hidden>Install update</button><button id="export-log" class="secondary">Export log</button></div>
+      <p id="status" class="status" role="status" aria-live="polite">Starting…</p>
+    </section>
+  </main>
+</body>
+</html>
