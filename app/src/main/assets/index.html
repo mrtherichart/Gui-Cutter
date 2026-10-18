@@ -5,15 +5,54 @@
   <meta name="theme-color" content="#253e4e">
   <title>Gui Cutter</title><link rel="stylesheet" href="app.css">
 </head><body>
+  <svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16 M4 12h16 M4 17h16"/></symbol>
+<symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7 4 12l5 5 M4 12h10a6 6 0 0 1 0 12"/></symbol>
+<symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 7 5 5-5 5 M20 12H10a6 6 0 0 0 0 12"/></symbol>
+<symbol id="i-save" viewBox="0 0 24 24"><path d="M12 3v12 m-5-5 5 5 5-5 M5 18v3h14v-3"/></symbol>
+<symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V7a1.5 1.5 0 0 1 3 0v5-7a1.5 1.5 0 0 1 3 0v7-5a1.5 1.5 0 0 1 3 0v6-3a1.5 1.5 0 0 1 3 0v7a7 7 0 0 1-7 7h-2a6 6 0 0 1-5-2l-4-5a1.7 1.7 0 0 1 2.6-2.2L8 16"/></symbol>
+<symbol id="i-pointer" viewBox="0 0 24 24"><path d="m6 3 13 10-7 1-3 7z"/></symbol>
+<symbol id="i-crop" viewBox="0 0 24 24"><path d="M4 8V4h4 M16 4h4v4 M20 16v4h-4 M8 20H4v-4"/></symbol>
+<symbol id="i-nine" viewBox="0 0 24 24"><path d="M4 4h16v16H4z M9.5 4v16 M14.5 4v16 M4 9.5h16 M4 14.5h16"/></symbol>
+<symbol id="i-assets" viewBox="0 0 24 24"><path d="M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z"/></symbol>
+<symbol id="i-zoom" viewBox="0 0 24 24"><path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zm5.5-2 5 5"/></symbol>
+<symbol id="i-magnet" viewBox="0 0 24 24"><path d="M4 3h5v8H4z M15 3h5v8h-5z M4 11v4a8 8 0 0 0 16 0v-4"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></symbol>
+<symbol id="i-precision" viewBox="0 0 24 24"><path d="M12 2v5m0 10v5 M2 12h5m10 0h5 M8 12a4 4 0 1 0 8 0 4 4 0 0 0-8 0"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19"/></symbol>
+<symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol></svg>
   <main id="workspace" class="workspace">
     <canvas id="editor" aria-label="Image cutting canvas"></canvas>
     <div id="empty" class="empty"><div class="empty-icon">▧</div><h1>Gui Cutter</h1><p>Select a project folder and import a screenshot to begin.</p><button id="empty-open" class="primary">Open project</button><button id="empty-image" class="secondary">Open image</button></div>
     <div id="controls">
-      <div class="float top-left"><button id="project-btn" title="Project" aria-label="Open project menu">☰</button><button id="project-title" class="project-title" title="Project files">No project</button><span id="dirty" class="dirty" hidden title="Unsaved edits">●</span></div>
-      <div class="float top-right"><button id="undo" title="Undo" aria-label="Undo">↶</button><button id="redo" title="Redo" aria-label="Redo">↷</button><button id="save" class="primary" title="Save crops and manifest">Save</button></div>
-      <nav class="float left-rail" aria-label="Canvas tools"><button data-mode="navigate" title="Pan image">✋<small>Pan</small></button><button data-mode="edit" class="active" title="Select, move and resize">⌖<small>Edit</small></button><button data-mode="new" title="Draw new crop">▣<small>New</small></button><button id="new-kind" title="Crop type" class="kind">Normal ▾</button></nav>
-      <nav class="float right-rail" aria-label="Workspace tools"><button id="zoom-plus" title="Zoom in">+</button><span id="zoom-label" title="Current zoom">100%</span><button id="zoom-minus" title="Zoom out">−</button><button id="fit" title="Fit image">Fit</button><div class="rule"></div><button id="snap" title="Toggle edge snapping">◈</button><button id="assets-btn" title="Asset list">▤</button><button id="properties-btn" title="Properties">⚙</button></nav>
-      <div id="selection-strip" class="float selection-strip" hidden><button id="selection-info" title="Edit coordinates"><strong id="selection-name"></strong><span id="selection-size"></span></button><button id="quick-preview" title="Preview selection">◧</button><button id="quick-nudge" title="Pixel precision">✥</button></div>
+      <header class="float top-bar" aria-label="Editor actions">
+        <button id="project-btn" class="icon-button" title="Project and settings" aria-label="Open project menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"></use></svg></button>
+        <button id="project-title" class="project-title" title="Project files">No project</button>
+        <span id="dirty" class="dirty" hidden title="Unsaved edits"></span>
+        <span class="top-actions"><button id="undo" class="icon-button" title="Undo" aria-label="Undo"><svg class="ico" aria-hidden="true"><use href="#i-undo"></use></svg></button><button id="redo" class="icon-button" title="Redo" aria-label="Redo"><svg class="ico" aria-hidden="true"><use href="#i-redo"></use></svg></button><button id="save" class="icon-button save-button" title="Save crops and manifest" aria-label="Save project"><svg class="ico" aria-hidden="true"><use href="#i-save"></use></svg></button></span>
+      </header>
+      <nav class="float tool-rail" aria-label="Canvas tools">
+        <button data-mode="navigate" title="Navigate — one finger pan" aria-label="Navigate"><svg class="ico" aria-hidden="true"><use href="#i-hand"></use></svg></button>
+        <button data-mode="edit" title="Select and edit" aria-label="Edit crop" class="active"><svg class="ico" aria-hidden="true"><use href="#i-pointer"></use></svg></button>
+        <button data-mode="new" title="Draw normal crop" aria-label="New normal crop"><svg class="ico" aria-hidden="true"><use href="#i-crop"></use></svg></button>
+        <button id="new-kind" title="Draw nine-slice crop" aria-label="New nine-slice crop"><svg class="ico" aria-hidden="true"><use href="#i-nine"></use></svg></button>
+      </nav>
+      <div id="selection-strip" class="float selection-strip" hidden>
+        <canvas id="selection-thumb" width="50" height="39" aria-hidden="true"></canvas>
+        <button id="selection-info" title="Open asset properties"><strong id="selection-name"></strong><span id="selection-size"></span></button>
+        <button id="quick-nudge" class="icon-button" title="Pixel precision" aria-label="Pixel precision"><svg class="ico" aria-hidden="true"><use href="#i-precision"></use></svg></button>
+        <button id="properties-btn" class="icon-button" title="Asset properties" aria-label="Asset properties"><svg class="ico" aria-hidden="true"><use href="#i-chevron"></use></svg></button>
+      </div>
+      <nav class="float bottom-bar" aria-label="Zoom and workspace">
+        <button id="fit" class="icon-button" title="Fit image" aria-label="Fit image"><svg class="ico" aria-hidden="true"><use href="#i-fit"></use></svg></button>
+        <input id="zoom-range" class="zoom-range" type="range" min="0" max="1000" value="450" aria-label="Zoom" title="Zoom in or out">
+        <button id="zoom-label" class="zoom-value" title="Tap to fit image" aria-label="Fit image">100%</button>
+        <span class="separator"></span>
+        <button id="snap" class="snap-button selected" title="Toggle edge snapping" aria-label="Toggle edge snapping"><svg class="ico" aria-hidden="true"><use href="#i-magnet"></use></svg><span>Snap</span></button>
+        <span class="separator subtle"></span>
+        <button id="assets-btn" class="icon-button assets-button" title="Assets" aria-label="Open asset list"><svg class="ico" aria-hidden="true"><use href="#i-assets"></use></svg></button>
+      </nav>
       <div id="status" class="status" role="status" aria-live="polite" hidden></div>
       <button id="clean-restore" class="clean-restore" hidden title="Restore editor controls">Show tools</button>
     </div>
@@ -25,6 +64,9 @@
       <section id="tab-preview" class="tab-pane" hidden><div id="preview-label" class="minor">Select an asset</div><div class="preview-box"><canvas id="preview"></canvas></div><label class="switch"><input id="explode-preview" type="checkbox"> Exploded nine-slice preview</label><p class="minor">Nine-slice exports are one PNG with margins stored in ui_slices.json.</p></section>
       <section id="tab-files" class="tab-pane" hidden><div class="label-line"><strong>Project folder</strong><span id="folder-name">No folder selected</span></div><div class="row"><button id="choose-folder" class="primary">Choose folder</button><button id="open-image">Import image</button></div><div class="row"><button id="reload-project">Reload saved</button><button id="inspect-files">Refresh files</button></div><div id="file-list" class="file-list"></div><p class="minor">Android projects use base.png, ui_slices.json and exports/ in your selected folder. Saving is manual.</p></section>
       <section id="tab-settings" class="tab-pane" hidden>
+        <h2>Appearance</h2>
+        <label class="field"><span>Color scheme</span><select id="setting-theme"><option value="system">System</option><option value="dark">Dark</option><option value="light">Light</option></select></label>
+        <label class="switch"><input data-setting="reduceGlass" type="checkbox"> Reduce transparency</label>
         <h2>Editor</h2>
         <label class="switch"><input data-setting="edgeSnap" type="checkbox"> Smart edge snapping</label>
         <label class="switch"><input data-setting="showEdges" type="checkbox"> Show detected edges</label>
@@ -43,7 +85,6 @@
         <pre id="diagnostics" class="diagnostics"></pre>
       </section>
     </aside>
-    <div id="kind-menu" class="popup" hidden><button data-kind="normal">Normal crop</button><button data-kind="nine_slice">Nine-slice crop</button></div>
     <div id="nudge-panel" class="nudge-panel" hidden><div class="nudge-header"><b>Pixel adjustment</b><button id="close-nudge">×</button></div><div class="nudge-grid"><span></span><button data-nudge="0,-1">↑</button><span></span><button data-nudge="-1,0">←</button><button id="nudge-unit">1 px</button><button data-nudge="1,0">→</button><span></span><button data-nudge="0,1">↓</button><span></span></div></div>
     <div id="magnifier" class="magnifier" hidden><canvas id="magnify-canvas" width="140" height="140"></canvas><span id="magnify-label"></span></div>
     <input id="browser-image" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" hidden><input id="browser-manifest" type="file" accept="application/json,.json" hidden>

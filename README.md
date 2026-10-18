@@ -9,17 +9,20 @@ A self-contained Android screenshot UI cutter using Kotlin + a packaged JavaScri
 - Direction-aware weighted edge snapping, visual edge overlay, nearest-neighbour preview
 - Two-finger pinch/zoom/pan, one-finger tool modes, a dedicated move grip and screen-size touch handles
 - Undo/redo history (128 snapshots), unsaved badge and manual Save Sync
-- Local recovery drafts, responsive floating interface, full-screen Clean Canvas mode
+- Local recovery drafts, floating translucent tool surfaces, compact selected-asset thumbnail, full-screen Clean Canvas mode
 - Native Android folder picker, persistent folder access, project file inspection and opening exports
-- In-app GitHub Release APK updates, exportable rotating diagnostics, settings and developer panel
+- Dark, light and system appearance, optional reduced transparency, full preferences and developer diagnostics
+- In-app GitHub Release APK updates and exportable rotating logs
 
 ## Workflow
 
 1. Install the signed [GitHub Release](https://github.com/mrtherichart/Gui-Cutter/releases/latest).
 2. Open **Files** and choose a workspace folder under Documents or another location allowed by Android.
 3. Import an image. Gui Cutter stores it as **base.png**.
-4. Draw crops using **New**. Use **Edit** for selected outlines/handles and the middle move grip. Use two fingers to pan/zoom at any time.
-5. Tap **Save** to write `ui_slices.json` and the PNG crops to `exports/`. These are ordinary files accessible from Android's file manager.
+4. The left rail has **Pan**, **Edit**, **New rectangle**, and **New nine-slice**. Drag the image to create crops, then use handles or the central move grip in Edit mode. Use two fingers to pan/zoom at any time. Double-tap while using Pan to fit the image.
+5. The bottom glass bar has **Fit**, the zoom slider, zoom percentage, **Snap**, and **Assets**. Tap the selected-asset strip for its properties; it also offers pixel nudging. Tap the Save icon in the top bar to write `ui_slices.json` and PNG crops to `exports/`. These are ordinary files accessible from Android's file manager.
+
+Appearance lives under **Project → Settings → Appearance**. Choose System, Dark or Light; Reduce transparency disables blur for slow WebViews. The full-screen work area itself remains sharp and unfiltered.
 
 Imported desktop `ui_slices.json` files are supported. The desktop `image_path` field is ignored in favor of the project's local `base.png`. Nine-slice margins remain `left`, `top`, `right`, `bottom` in the manifest.
 
