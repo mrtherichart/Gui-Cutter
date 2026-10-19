@@ -107,9 +107,6 @@ function change(){state.project.commit();refreshUI();scheduleDraft();}
 function selectIndex(i){state.project.selected=i;refreshUI();}
 function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}state.mode=mode;state.previewRect=null;state.gesture=null;updateButtons();scheduleDraw();}
 const applicationTabs=new Set(['files','settings','developer']);
-function isAnyDrawerOpen(){return $('app-drawer').classList.contains('is-open')||$('drawer').classList.contains('is-open');}
-function bottomTabVisible(tab){return $('drawer').classList.contains('is-open')&&state.tab===tab;}
-
 const panelMap={app:$('app-drawer'),sheet:$('drawer')};
 const closedReveal={app:16,sheet:20};
 const drawerMotion={active:null,animation:null,multi:false};
