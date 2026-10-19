@@ -217,7 +217,7 @@ class MainActivity : ComponentActivity() {
         .put("platform","android")
     fun sendEvent(type:String,payload:JSONObject) {
         runOnUiThread {
-            if (!::webView.isInitialized)return@runOnUiThread
+            if (isDestroyed || isFinishing || !::webView.isInitialized)return@runOnUiThread
             val js="window.GuiCutterReceive && window.GuiCutterReceive(${JSONObject.quote(type)},$payload);"
             webView.evaluateJavascript(js,null)
         }
@@ -310,7 +310,12 @@ class MainActivity : ComponentActivity() {
     fun exportLog()=logExporter.launch("Gui-Cutter-devlog.txt")
     override fun onDestroy() {
         updates.close();io.shutdown()
-        if(::webView.isInitialized){webView.removeJavascriptInterface("NativeAndroid");webView.destroy()}
+        if(::webView.isInitialized){
+            webView.stopLoading()
+            webView.removeJavascriptInterface("NativeAndroid")
+            (webView.parent as? android.view.ViewGroup)?.removeView(webView)
+            webView.destroy()
+        }
         super.onDestroy()
     }
 }

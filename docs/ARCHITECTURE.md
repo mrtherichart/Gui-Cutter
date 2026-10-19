@@ -2,8 +2,9 @@
 
 - **HTML/CSS + Canvas:** complete screen layout, full-canvas rendering, floating toolbars, left application drawer, bottom inspection sheet and previews.
 - **app.mjs:** one gesture controller, saved material/motion preferences, two isolated drawer states, UI event wiring, edge visualization and project operations.
-- **editor-performance.mjs:** bounded LRU thumbnail cache, viewport visibility test, and content-key invalidation for the asset list; independent of the DOM and covered by Node tests.
-- **model.mjs:** normalized asset schema, filename validation, 128-step undo/redo and dirty tracking.
+- **editor-performance.mjs:** bounded thumbnail cache, revision-keyed list invalidation, and pixel-aligned viewport clipping for crops, image and checkerboard; small pure helpers tested in Node.
+- **pointer-navigation.mjs:** standalone pan/pinch math. The canvas controller owns touch lifetime, cancellation, and the transition from pinch to single-finger pan.
+- **model.mjs:** normalized asset schema, filename validation, 128-step undo/redo, monotonic edit revisions, and constant-time committed dirty checks.
 - **geometry.mjs:** inclusive screen transforms and exclusive image crop bounds, resize handles, move, directional snapping, nine-slice preview parts.
 - **edge-worker.js:** off-main-thread luminance-gradient edge detection. Image coordinates remain source pixels.
 - **MainActivity.kt:** Android system picker, lifecycle, immersive window, system Back dispatch to open UI panels, secure WebView asset loading and event dispatch.
@@ -27,3 +28,13 @@ Native methods are exposed only to bundled first-party pages. No broad storage p
 ## Rendering and lifecycle
 
 The asset library preserves its DOM and preview bitmaps when only selection changes. Geometry, image, or view-mode changes invalidate the list. Off-screen crop decoration is skipped, while a small margin preserves visible handles and glow. The magnifier coalesces pointer moves to one paint per animation frame. Image changes terminate obsolete edge workers, and temporary browser object URLs are released after loading. The source-image geometry and native export are unchanged.
+
+## v0.1.10 maintenance
+
+The source image and edge overlay are drawn from a pixel-aligned visible source region instead of issuing full-image draw commands at extreme zoom. Subpixel checkerboard tiles become a flat neutral background, avoiding large numbers of invisible cell draws; high-zoom checkerboard remains unchanged. Crops off-screen are still culled independently.
+
+The asset list uses the project's monotonic committed revision rather than serializing the full asset array on selection. The unsaved indicator compares committed history against the last saved snapshot in constant time; a drag becomes an edit when it is committed on release. Undo, redo, reload, and canceled drags invalidate visible previews appropriately.
+
+Pinch math is isolated and tested. Adding or removing touch points rebases the gesture; the final remaining finger pans without triggering selection or a double-tap. `pointercancel` aborts the interaction. Image-load and recovery dialogs check the image generation and project key before applying old edits. The native WebView is detached on destroy and ignores late events. Project files and signing are unchanged.
+
+Testing: all Node tests and the signed Android build/lint on Actions; manual device interaction and in-place APK upgrade remain separate verification steps.

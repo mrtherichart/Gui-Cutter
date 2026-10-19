@@ -82,3 +82,7 @@ Deferred select-mode taps prevent two-finger gestures from changing selection; l
 ## v0.1.9 — internal cleanup and interaction performance
 
 Selections now update the asset-list highlight without reconstructing all crop thumbnails. Crop decoration outside the visible canvas is skipped, thumbnail caching evicts only the oldest entries, and the magnifier paints at most once per animation frame. Loading another image stops obsolete edge detection work and releases temporary browser image URLs. Removed an unused Android-starter UI script. Geometry, gestures, project files, native export and Android identity retain their existing behavior. Unit tests cover list invalidation, viewport visibility and cache eviction.
+
+## v0.1.10 — focused performance and lifecycle refactor
+
+Canvas painting now limits source-image reads to the visible pixel area at high zoom and skips checkerboard detail too fine to display. Asset-list updates use edit revisions, and the Save indicator no longer serializes the complete project on every pointer move. Touch navigation has isolated, tested pan/pinch math, including smooth transitions when fingers lift in different orders. Late image/recovery operations are guarded against project switches; Android releases its WebView when closing. The UI design, offline project files, ZIP export, app ID and signing key remain unchanged.

@@ -2,7 +2,8 @@ import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} fro
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
 import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt} from './drawer-motion.mjs';
-import {BoundedCache, assetListKey, intersectsViewport} from './editor-performance.mjs';
+import {BoundedCache, assetListKey, intersectsViewport, visibleCheckerboard, visibleImageRegion} from './editor-performance.mjs';
+import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
 
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
@@ -403,16 +404,21 @@ function redraw(){
   ctx.fillStyle=resolvedTheme()==='dark'?'#121c2a':'#8d9ca7';ctx.fillRect(0,0,w,h);
   if(!state.image)return;
   const v=state.view,im=state.image,p=v.toScreen(0,0),iw=im.naturalWidth,ih=im.naturalHeight;
-  if(settings.checkerboard){const size=14;ctx.save();ctx.beginPath();ctx.rect(p.x,p.y,iw*v.scale,ih*v.scale);ctx.clip();
+  if(settings.checkerboard){
+    const cells=visibleCheckerboard(p.x,p.y,v.scale,iw,ih,w,h);
+    ctx.save();ctx.beginPath();ctx.rect(p.x,p.y,iw*v.scale,ih*v.scale);ctx.clip();
     ctx.fillStyle='#f4f4f4';ctx.fillRect(p.x,p.y,iw*v.scale,ih*v.scale);
-    ctx.fillStyle='#d8dadd';const sx=Math.floor(Math.max(0,-p.x)/(size*v.scale)),sy=Math.floor(Math.max(0,-p.y)/(size*v.scale));
-    const ex=Math.min(Math.ceil(iw/size),sx+Math.ceil(w/(size*v.scale))+2),ey=Math.min(Math.ceil(ih/size),sy+Math.ceil(h/(size*v.scale))+2);
-    for(let iy=sy;iy<ey;iy++)for(let ix=sx;ix<ex;ix++)if((ix+iy)%2===0)ctx.fillRect(p.x+ix*size*v.scale,p.y+iy*size*v.scale,size*v.scale,size*v.scale);
+    if(cells){ctx.fillStyle='#d8dadd';for(let iy=cells.y0;iy<cells.y1;iy++)for(let ix=cells.x0;ix<cells.x1;ix++)
+      if((ix+iy)%2===0)ctx.fillRect(p.x+ix*cells.tile,p.y+iy*cells.tile,cells.tile,cells.tile);}
     ctx.restore();
   }
   ctx.imageSmoothingEnabled=false;
-  ctx.drawImage(im,p.x,p.y,iw*v.scale,ih*v.scale);
-  if(settings.showEdges&&state.overlay)ctx.drawImage(state.overlay,p.x,p.y,iw*v.scale,ih*v.scale);
+  const source=visibleImageRegion(p.x,p.y,v.scale,iw,ih,w,h);
+  if(source){
+    const {sx,sy,sw,sh,dx,dy,dw,dh}=source;
+    ctx.drawImage(im,sx,sy,sw,sh,dx,dy,dw,dh);
+    if(settings.showEdges&&state.overlay)ctx.drawImage(state.overlay,sx,sy,sw,sh,dx,dy,dw,dh);
+  }
   for(let i=0;i<state.project.assets.length;i++){
     if(settings.hideUnselected&&i!==state.project.selected)continue;
     const a=state.project.assets[i],selected=i===state.project.selected;
@@ -502,17 +508,21 @@ async function openImageElement(src,loadManifest=true){
     if(loadManifest&&native){try{const json=native.readManifest();state.project.load(json?JSON.parse(json):{assets:[]});}
       catch(e){state.project.reset([]);errorMessage('Could not load manifest: '+e.message);}}
     else state.project.reset([]);
-    fitImage();refreshUI();processEdges(image,seq);await recoverDraft();toast(`Image loaded: ${image.naturalWidth} × ${image.naturalHeight}`);
+    fitImage();refreshUI();processEdges(image,seq);await recoverDraft(seq);
+    if(seq===state.imageSeq)toast(`Image loaded: ${image.naturalWidth} × ${image.naturalHeight}`);
   };
   image.onerror=()=>{releaseImageUrl(src);if(seq===state.imageSeq){state.image=null;state.imageLoaded=false;$('empty').hidden=false;errorMessage('Could not open base image.');}};
   image.src=src;
 }
-async function recoverDraft(){
-  try{const entry=localStorage.getItem('gui-cutter.draft.'+state.projectKey);if(!entry)return;
+async function recoverDraft(seq){
+  const projectKey=state.projectKey;
+  try{const entry=localStorage.getItem('gui-cutter.draft.'+projectKey);if(!entry)return;
     const draft=JSON.parse(entry),p=state.project;
     if(draft.iw!==p.imageWidth||draft.ih!==p.imageHeight)return;
     if(JSON.stringify({assets:draft.assets})===p.encode()){clearDraft();return;}
     const yes=await createModal({title:'Recover unfinished edits?',message:'A local recovery snapshot contains edits not in the saved project. Restore it?',question:true});
+    // A different project may have loaded while the recovery dialog was open.
+    if(seq!==state.imageSeq||projectKey!==state.projectKey)return;
     if(yes){p.assets=verifyAssets(draft.assets,p.imageWidth,p.imageHeight);p.commit();refreshUI();toast('Recovered edits; Save to write project files.');}
     else clearDraft();
   }catch(e){log('Draft recovery failed',e.message);}
@@ -554,7 +564,7 @@ function cropThumbnail(asset){
 function renderList(){
   if(!bottomTabVisible('assets'))return;
   const panel=$('asset-list');
-  const contentKey=assetListKey(state.project.assets,state.imageSeq,settings.assetView);
+  const contentKey=assetListKey(state.project.revision,state.imageSeq,settings.assetView);
   if(contentKey===lastAssetListKey){
     // Selecting a crop changes two classes, not the entire list of previews.
     if(lastAssetSelection!==state.project.selected){
@@ -612,7 +622,11 @@ function applyProps(){const a=state.project.active;if(!a||state.busy)return;cons
       changes.left=changes.right=Math.max(1,Math.floor(a.w/4));changes.top=changes.bottom=Math.max(1,Math.floor(a.h/4));}
     state.project.update(state.project.selected,changes);refreshUI();scheduleDraft();toast('Properties updated');}
   catch(e){errorMessage(e);}}
+let previousPreviewKey=null;
 function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('preview'),a=state.project.active,container=canvas.parentElement;
+  const previewKey=[state.imageSeq,state.project.revision,state.project.selected,settings.explodeNine,container.clientWidth,container.clientHeight].join(':');
+  if(previousPreviewKey===previewKey)return;
+  previousPreviewKey=previewKey;
   if(!a||!state.image){$('preview-label').textContent='Select a crop first';canvas.width=1;canvas.height=1;return;}
   const exploded=a.kind==='nine_slice'&&settings.explodeNine,gap=exploded?3:0;
   const sw=a.w+2*gap,sh=a.h+2*gap,ratio=Math.min(1,340/sw,Math.max(130,container.clientHeight-25)/sh);
@@ -660,9 +674,9 @@ function paintAlignmentGuides(view){
     }ctx.stroke();
   }ctx.restore();
 }
-function cancelSingle(){state.alignGuides=[];state.snapMemory='';const g=state.gestureData;if(g?.before)state.project.restoreSnapshot(g.before);state.previewRect=null;state.snapPoint=null;state.gesture=null;state.gestureData=null;refreshUI();}
-function startPinch(){const prior=state.gestureData?.selectedBefore;cancelSingle();if(prior!==undefined)state.project.selected=prior;const pts=[...state.pointers.values()].slice(0,2),a=pts[0],b=pts[1],mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-  state.gesture='pinch';state.gestureData={distance:Math.hypot(a.x-b.x,a.y-b.y)||1,scale:state.view.scale,anchor:state.view.toImage(mx,my)};
+function cancelSingle(){state.alignGuides=[];state.snapMemory='';const g=state.gestureData;if(g?.modified&&g.before)state.project.restoreSnapshot(g.before);state.previewRect=null;state.snapPoint=null;state.gesture=null;state.gestureData=null;refreshUI();}
+function startPinch(){const prior=state.gestureData?.selectedBefore;cancelSingle();if(prior!==undefined)state.project.selected=prior;
+  state.gesture='pinch';state.gestureData=beginPinch(state.view,[...state.pointers.values()]);
 }
 function startSingle(p){if(!state.image||state.busy)return;const {iw,ih}=appCtx(),v=state.view,pt=v.toImage(p.x,p.y);
   const base={x:Math.round(limit(pt.x,0,iw)),y:Math.round(limit(pt.y,0,ih))};
@@ -694,11 +708,11 @@ function handlePointerDown(e){state.focusEpoch++;if(e.button!==0&&e.pointerType=
   if(state.pointers.size===2)startPinch();else if(state.pointers.size===1)startSingle(point);
 }
 function handlePointerMove(e){if(!state.pointers.has(e.pointerId))return;e.preventDefault();const previous=state.pointers.get(e.pointerId),p={x:e.clientX,y:e.clientY};state.pointers.set(e.pointerId,p);
-  if(state.pointers.size>=2){if(state.gesture!=='pinch')startPinch();const [a,b]=[...state.pointers.values()].slice(0,2),m={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-    const g=state.gestureData;state.view.scale=limit(g.scale*(Math.hypot(a.x-b.x,a.y-b.y)||1)/g.distance,.125,32);
-    state.view.x=m.x-g.anchor.x*state.view.scale;state.view.y=m.y-g.anchor.y*state.view.scale;setZoomLabel();scheduleDraw();return;}
+  if(state.pointers.size>=2){if(state.gesture!=='pinch')startPinch();
+    Object.assign(state.view,calculatePinch(state.gestureData,[...state.pointers.values()]));
+    setZoomLabel();scheduleDraw();return;}
   if(state.gesture==='pinch'||!state.gestureData)return;
-  if(state.gesture==='pan'){state.view.pan(p.x-previous.x,p.y-previous.y);scheduleDraw();return;}
+  if(state.gesture==='pan'){const {dx,dy}=panDelta(previous,p);state.view.pan(dx,dy);scheduleDraw();return;}
   const g=state.gestureData,{iw,ih}=appCtx();
   if(state.gesture==='pending-select'){
     if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)<9)return;
@@ -718,22 +732,29 @@ function handlePointerMove(e){if(!state.pointers.has(e.pointerId))return;e.preve
     }
     scheduleDraw();return;
   }
-  if(state.gesture==='handle'){const target=screenSnap(p.x,p.y,g.handle);state.project.assets[g.index]=normalizeAsset(applyCropAlignment(adjust(g.start,g.handle,target.x,target.y,iw,ih),'resize',g.handle,g.index),iw,ih);refreshDuringGesture();showMagnifier(p,target);return;}
+  if(state.gesture==='handle'){const target=screenSnap(p.x,p.y,g.handle);g.modified=true;state.project.assets[g.index]=normalizeAsset(applyCropAlignment(adjust(g.start,g.handle,target.x,target.y,iw,ih),'resize',g.handle,g.index),iw,ih);refreshDuringGesture();showMagnifier(p,target);return;}
   if(state.gesture==='move'){
     const pos=state.view.toImage(p.x,p.y);const dx=Math.round(pos.x-g.anchor.x),dy=Math.round(pos.y-g.anchor.y);
-    state.project.assets[g.index]=applyCropAlignment(move(g.start,dx,dy,iw,ih),'move',null,g.index);refreshDuringGesture();showMagnifier(p,pos);
+    g.modified=true;state.project.assets[g.index]=applyCropAlignment(move(g.start,dx,dy,iw,ih),'move',null,g.index);refreshDuringGesture();showMagnifier(p,pos);
   }
 }
 async function finishDraw(r,template=null){state.previewRect=null;if(!r||r.w<2||r.h<2)return;
+  const imageSeq=state.imageSeq,projectKey=state.projectKey;
   const id=await createModal({title:'New crop',initial:`asset_${String(state.project.assets.length+1).padStart(2,'0')}`,message:'Give this UI element a unique name.'});
-  if(!id)return;try{const {iw,ih}=appCtx();const asset=makeAsset(id,settings.newKind,r.x,r.y,r.w,r.h,iw,ih);
+  if(!id||imageSeq!==state.imageSeq||projectKey!==state.projectKey)return;try{const {iw,ih}=appCtx();const asset=makeAsset(id,settings.newKind,r.x,r.y,r.w,r.h,iw,ih);
     if(template?.kind==='nine_slice'&&settings.newKind==='nine_slice')for(const side of ['left','right','top','bottom'])asset[side]=template[side];
     state.project.insert(normalizeAsset(asset,iw,ih));rememberTemplate();tactile();refreshUI();scheduleDraft();chooseMode('edit');toast(`Created ${id}`);}catch(e){errorMessage(e);}}
 function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preventDefault();state.pointers.delete(e.pointerId);
-  if(state.gesture==='pinch'){if(!state.pointers.size){state.gesture=null;state.gestureData=null;}state.lastNavigationTap=null;scheduleDraw();return;}
+  if(state.gesture==='pinch'){
+    if(e.type==='pointercancel'){state.pointers.clear();state.gesture=null;state.gestureData=null;}
+    else if(state.pointers.size>=2)state.gestureData=beginPinch(state.view,[...state.pointers.values()]);
+    else if(state.pointers.size===1){state.gesture='pan';state.gestureData={resumedAfterPinch:true};}
+    else{state.gesture=null;state.gestureData=null;}
+    state.lastNavigationTap=null;scheduleDraw();return;
+  }
   const action=state.gesture,r=state.previewRect,g=state.gestureData;state.gesture=null;state.gestureData=null;state.previewRect=null;state.snapPoint=null;state.alignGuides=[];state.snapMemory='';hideMagnifier();
-  if(e.type==='pointercancel'){if(g?.before)state.project.restoreSnapshot(g.before);refreshUI();return;}
-  if(action==='pan'&&g?.screen){
+  if(e.type==='pointercancel'){if(g?.modified&&g.before)state.project.restoreSnapshot(g.before);refreshUI();return;}
+  if(action==='pan'&&g?.screen&&!g.resumedAfterPinch){
     const delta=Math.hypot(e.clientX-g.screen.x,e.clientY-g.screen.y),now=Date.now();
     if(delta<12&&state.lastNavigationTap&&now-state.lastNavigationTap.time<330&&Math.hypot(e.clientX-state.lastNavigationTap.x,e.clientY-state.lastNavigationTap.y)<35){fitImage();state.lastNavigationTap=null;}
     else state.lastNavigationTap=delta<12?{x:e.clientX,y:e.clientY,time:now}:null;
@@ -796,7 +817,10 @@ function inspectFiles(){const box=$('file-list');box.replaceChildren();if(!nativ
 function reloadProject(){if(state.project.dirty){createModal({title:'Discard unsaved changes?',message:'This replaces the current canvas with the files already saved on disk.',question:true}).then(yes=>{if(yes){clearDraft();loadNativeProject();}});}
   else loadNativeProject();}
 function loadNativeProject(){refreshStatus();if(!native){$('browser-manifest').click();return;}
-  if(!state.nativeInfo?.hasBase){state.image=null;state.imageLoaded=false;state.lastTemplateAsset=null;$('empty').hidden=false;state.project.reset([]);refreshUI();return;}
+  if(!state.nativeInfo?.hasBase){
+    ++state.imageSeq;stopEdgeWorker();state.pointers.clear();state.gesture=null;state.gestureData=null;
+    state.image=null;state.edges=null;state.overlay=null;state.imageLoaded=false;state.lastTemplateAsset=null;
+    assetThumbnails.clear();$('empty').hidden=false;state.project.reset([]);refreshUI();return;}
   const stamp=state.nativeInfo.imageStamp||Date.now();openImageElement(`https://appassets.androidplatform.net/project/base.png?v=${encodeURIComponent(stamp)}`);}
 // Native projects share a single persistent Android work folder.
 function refreshProjectLibrary(){

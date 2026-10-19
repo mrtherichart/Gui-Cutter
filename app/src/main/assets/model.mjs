@@ -50,15 +50,18 @@ export function makeAsset(id, kind, x, y, w, h, iw, ih) {
 }
 export class Project {
   constructor() { this.assets=[]; this.selected=-1; this.imageWidth=0; this.imageHeight=0;
-    this.history=[]; this.cursor=-1; this.saved=''; this.reset([]); }
+    this.history=[]; this.cursor=-1; this.saved=''; this.revision=0; this.reset([]); }
   encode() { return JSON.stringify({assets:this.assets}); }
   manifest() { return {image_path:'base.png',assets:copy(this.assets)}; }
-  get dirty() { return this.encode() !== this.saved; }
+  // Only committed edits count as unsaved; interactive drags commit at pointer release.
+  // This avoids serializing all assets on every animation frame.
+  get dirty() { return this.history[this.cursor] !== this.saved; }
   get active() { return this.assets[this.selected] ?? null; }
   reset(assets, saved=true) {
     this.assets=verifyAssets(assets,this.imageWidth,this.imageHeight);
     this.selected=-1; this.history=[this.encode()]; this.cursor=0;
     this.saved=saved ? this.encode() : JSON.stringify({assets:[]});
+    this.revision++;
   }
   load(data) { if (!data || !Array.isArray(data.assets)) throw new Error('Invalid ui_slices.json'); this.reset(data.assets); }
   commit() {
@@ -68,14 +71,15 @@ export class Project {
     this.history.push(value);
     if (this.history.length > MAX_HISTORY) this.history.shift();
     this.cursor=this.history.length-1;
+    this.revision++;
     return true;
   }
-  undo() { if(this.cursor < 1)return false; this.assets=JSON.parse(this.history[--this.cursor]).assets; this.selected=Math.min(this.selected,this.assets.length-1); return true; }
-  redo() { if(this.cursor >= this.history.length-1)return false; this.assets=JSON.parse(this.history[++this.cursor]).assets; this.selected=Math.min(this.selected,this.assets.length-1); return true; }
+  undo() { if(this.cursor < 1)return false; this.assets=JSON.parse(this.history[--this.cursor]).assets; this.selected=Math.min(this.selected,this.assets.length-1); this.revision++; return true; }
+  redo() { if(this.cursor >= this.history.length-1)return false; this.assets=JSON.parse(this.history[++this.cursor]).assets; this.selected=Math.min(this.selected,this.assets.length-1); this.revision++; return true; }
   markSaved() { this.saved=this.encode(); }
   insert(a) { const next=verifyAssets([...this.assets,a],this.imageWidth,this.imageHeight);this.assets=next;this.selected=next.length-1;this.commit(); }
   update(index,changes) { const next=copy(this.assets);next[index]=normalizeAsset({...next[index],...changes},this.imageWidth,this.imageHeight);this.assets=verifyAssets(next,this.imageWidth,this.imageHeight);this.commit(); }
   deleteSelected() { if(!this.active)return;this.assets.splice(this.selected,1);this.selected=-1;this.commit(); }
   snapshot() { return this.encode(); }
-  restoreSnapshot(s) { this.assets=JSON.parse(s).assets; }
+  restoreSnapshot(s) { this.assets=JSON.parse(s).assets; this.revision++; }
 }
