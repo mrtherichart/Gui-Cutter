@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ReleaseTracker,lockedAxis,settleTarget,springAt} from '../app/src/main/assets/drawer-motion.mjs';
+import {ReleaseTracker,lockedAxis,settleTarget,springAt,tapProgress} from '../app/src/main/assets/drawer-motion.mjs';
 
 function track(points){const t=new ReleaseTracker();for(const [x,ms] of points)t.add(x,ms);return t;}
 test('finger axis locking ignores diagonals and small accidental movements',()=>{
@@ -51,4 +51,15 @@ test('terminal closing direction ignores the old opening flick',()=>{
  const t=track([[0,0],[100,80],[300,160],[295,180],[278,210],[265,235]]);
  assert.ok(t.velocity().pixelsPerMs<0);
  assert.equal(settleTarget(.8,t,340),0);
+});
+
+test('tap animation responds immediately and settles within short durations',()=>{
+  for(const [from,to,duration] of [[0,1,210],[1,0,165],[.55,1,95]]){
+    assert.equal(tapProgress(from,to,0,duration).progress,from);
+    assert.equal(tapProgress(from,to,duration,duration).progress,to);
+    assert.equal(tapProgress(from,to,duration,duration).done,true);
+    assert.equal(tapProgress(from,to,16,duration).done,false);
+    const moved=tapProgress(from,to,16,duration).progress;
+    assert.ok(to>from?moved>from:moved<from);
+  }
 });

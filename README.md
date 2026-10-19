@@ -86,3 +86,7 @@ Selections now update the asset-list highlight without reconstructing all crop t
 ## v0.1.10 — focused performance and lifecycle refactor
 
 Canvas painting now limits source-image reads to the visible pixel area at high zoom and skips checkerboard detail too fine to display. Asset-list updates use edit revisions, and the Save indicator no longer serializes the complete project on every pointer move. Touch navigation has isolated, tested pan/pinch math, including smooth transitions when fingers lift in different orders. Late image/recovery operations are guarded against project switches; Android releases its WebView when closing. The UI design, offline project files, ZIP export, app ID and signing key remain unchanged.
+
+## v0.1.11 — immediate menu response
+
+Tab contents now appear on the first frame, and tap-open/tap-close drawers use shorter motion without altering swipe physics. Android Workspace file inspection and Settings status updates no longer synchronously block tab clicks; the file list builds progressively and ignores stale responses. SAF export listing uses a direct provider query when available. Blur settings, assets, project files, gestures and signing remain compatible with previous releases.

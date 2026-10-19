@@ -17,6 +17,8 @@ class NativeBridge(private val activity: MainActivity) {
     @JavascriptInterface fun selectImage() = activity.runOnUiThread { activity.selectImage() }
     @JavascriptInterface fun readManifest(): String = activity.projectIO.readManifest()
     @JavascriptInterface fun inspectFiles(): String = activity.projectIO.inspectFiles().toString()
+    @JavascriptInterface fun inspectFilesAsync(request: Int, projectKey: String) = activity.inspectFilesAsync(request, projectKey)
+    @JavascriptInterface fun requestStatus() = activity.requestStatus()
     @JavascriptInterface fun saveProject(json: String) = activity.saveProject(json)
     @JavascriptInterface fun openExport(name: String) = activity.runOnUiThread { activity.openExport(name) }
     @JavascriptInterface fun testFolder() = activity.testFolder()

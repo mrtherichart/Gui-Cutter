@@ -216,10 +216,30 @@ class MainActivity : ComponentActivity() {
         .put("systemDark",systemDark())
         .put("platform","android")
     fun sendEvent(type:String,payload:JSONObject) {
+        // Serialize on the calling (usually I/O) thread, not while painting UI.
+        val js="window.GuiCutterReceive && window.GuiCutterReceive(${JSONObject.quote(type)},$payload);"
         runOnUiThread {
             if (isDestroyed || isFinishing || !::webView.isInitialized)return@runOnUiThread
-            val js="window.GuiCutterReceive && window.GuiCutterReceive(${JSONObject.quote(type)},$payload);"
             webView.evaluateJavascript(js,null)
+        }
+    }
+    fun requestStatus() {
+        io.execute {
+            try { sendEvent("status", statusPayload()) }
+            catch(e:Exception){DevLog.write("STATUS",e.stackTraceToString())}
+        }
+    }
+    fun inspectFilesAsync(request: Int, expectedProjectKey: String) {
+        io.execute {
+            val payload=JSONObject().put("request",request).put("projectKey",expectedProjectKey)
+            try {
+                if(projectIO.projectKey()!=expectedProjectKey) return@execute
+                payload.put("items",projectIO.inspectFiles())
+            } catch(e:Exception) {
+                DevLog.write("FILES",e.stackTraceToString())
+                payload.put("error",e.message ?: "Unable to inspect files")
+            }
+            sendEvent("files",payload)
         }
     }
     fun chooseFolder() = folderPicker.launch(null)

@@ -52,3 +52,11 @@ export function springAt(from,to,velocityPerSecond,elapsedMs,{frequency=20}={}){
   const p=clamp01(raw);
   return {progress:p,done:elapsedMs>120&&Math.abs(p-to)<.003||elapsedMs>=650};
 }
+
+// A clicked button is not a released drag: a short, decisive ease-out provides
+// immediate travel and a predictable completion time on 60 Hz devices.
+export function tapProgress(from,to,elapsedMs,durationMs){
+  const t=clamp01(elapsedMs/Math.max(1,durationMs));
+  const eased=1-(1-t)**3;
+  return {progress:clamp01(from+(to-from)*eased),done:t>=1};
+}

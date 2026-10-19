@@ -38,3 +38,11 @@ The asset list uses the project's monotonic committed revision rather than seria
 Pinch math is isolated and tested. Adding or removing touch points rebases the gesture; the final remaining finger pans without triggering selection or a double-tap. `pointercancel` aborts the interaction. Image-load and recovery dialogs check the image generation and project key before applying old edits. The native WebView is detached on destroy and ignores late events. Project files and signing are unchanged.
 
 Testing: all Node tests and the signed Android build/lint on Actions; manual device interaction and in-place APK upgrade remain separate verification steps.
+
+## Menu responsiveness (v0.1.11)
+
+Tab content switches immediately without entrance opacity or translation. Button-opened drawers use a short ease-out (210 ms opening, 165 ms closing); finger-driven drawers retain the independent critically damped release physics. The drawer is interactive during the last part of a tap-open animation. Reduced-motion and Smooth motion Off still bypass animation.
+
+Opening Workspace requests files asynchronously through the existing Kotlin I/O executor. Results are tagged with the request number and project key, so older results cannot replace a newly opened project's list. Visible lists are constructed in bounded animation-frame batches. Native exports-folder enumeration prefers a single `DocumentsContract` child query, with `DocumentFile` fallback for incompatible providers. Settings/Developer request status asynchronously. Project file data and preview rasterization do not delay the initial tab selection.
+
+Large glass surfaces keep their configured blur, with transform layer preparation limited to active drawer motion; idle closed panels no longer request a persistent promoted layer. Browser timing tests are not a substitute for Android device compositor profiling.

@@ -1,7 +1,7 @@
 import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} from './model.mjs';
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
-import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt} from './drawer-motion.mjs';
+import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt, tapProgress} from './drawer-motion.mjs';
 import {BoundedCache, assetListKey, intersectsViewport, visibleCheckerboard, visibleImageRegion} from './editor-performance.mjs';
 import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
 
@@ -155,9 +155,11 @@ function panelSpan(kind){
   return Math.max(1,(kind==='app'?panelMap.app.offsetWidth:panelMap.sheet.offsetHeight)-closedReveal[kind]);
 }
 function setTabs(tab){
+  if(state.tab===tab)return false;
   state.tab=tab;
   for(const el of document.querySelectorAll('.tab-pane'))el.hidden=el.id!=='tab-'+tab;
   for(const el of document.querySelectorAll('[data-tab]'))el.classList.toggle('current',el.dataset.tab===tab);
+  return true;
 }
 function syncShelfHandles(){
   $('side-grip').setAttribute('aria-expanded',String(panelMap.app.classList.contains('is-open')));
@@ -175,7 +177,7 @@ function renderPanelProgress(kind,value){
   dragDistance[kind]=p;
 }
 function clearPanelInline(kind){
-  const el=panelMap[kind];el.style.transform='';
+  const el=panelMap[kind];el.style.transform='';el.style.pointerEvents='';
   el.classList.remove('is-peeking');
   dragDistance[kind]=null;
 }
@@ -197,51 +199,70 @@ function finishPanel(kind,target){
   panel.classList.remove('gesture-live');
   document.body.dataset.openDrawer=open?(panelMap.app.classList.contains('is-open')?'app':'sheet'):'none';
   syncShelfHandles();
-  if(open)refreshUI();
+  // Tab content is prepared on selection, not rebuilt after the drawer settles.
 }
 function stopDrawerAnimation(){
   if(!drawerMotion.animation)return;
   cancelAnimationFrame(drawerMotion.animation.raf);
   drawerMotion.animation=null;
 }
-function moveDrawer(kind,to,start,velocity=0){
+function moveDrawer(kind,to,start,velocity=0,interaction='tap'){
   stopDrawerAnimation();
   const panel=panelMap[kind],from=clamp01(start),target=to?1:0;
-  panel.classList.add('gesture-live');
   if(!settings.smoothMotion||window.matchMedia('(prefers-reduced-motion: reduce)').matches){
     finishPanel(kind,target);return;
   }
-  const fromTime=performance.now(),initialVelocity=Math.max(-3.5,Math.min(3.5,velocity*1000/panelSpan(kind)));
+  panel.classList.add('gesture-live');
+  // Tap-to-open panels are interactive while their final few pixels settle.
+  if(target===1 && interaction==='tap'){
+    panel.style.pointerEvents='auto';panel.setAttribute('aria-hidden','false');
+  }
+  const span=panelSpan(kind);
+  const initialVelocity=Math.max(-3.5,Math.min(3.5,velocity*1000/span));
+  const duration=(target===1?210:165)*Math.max(.25,Math.abs(target-from));
+  const fromTime=performance.now();
   const anim={kind,raf:0};drawerMotion.animation=anim;
   const frame=t=>{
     if(drawerMotion.animation!==anim)return;
-    const sample=springAt(from,target,initialVelocity,t-fromTime);
+    const elapsed=t-fromTime;
+    const sample=interaction==='tap'
+      ?tapProgress(from,target,elapsed,duration)
+      :springAt(from,target,initialVelocity,elapsed,{frequency:29});
     renderPanelProgress(kind,sample.progress);
-    if(sample.done){
-      drawerMotion.animation=null;finishPanel(kind,target);
-    }else anim.raf=requestAnimationFrame(frame);
+    if(sample.done){drawerMotion.animation=null;finishPanel(kind,target);}
+    else anim.raf=requestAnimationFrame(frame);
   };
   anim.raf=requestAnimationFrame(frame);
+}
+let previewTask=0;
+function schedulePreview(){
+  if(previewTask)cancelAnimationFrame(previewTask);
+  // One paint for the new tab before a potentially expensive crop preview.
+  previewTask=requestAnimationFrame(()=>{
+    previewTask=0;
+    setTimeout(()=>{if(bottomTabVisible('preview'))renderPreview();},0);
+  });
 }
 function showTab(tab){
   const app=applicationTabs.has(tab),kind=app?'app':'sheet';
   if(state.gestureData){cancelSingle();state.pointers.clear();hideMagnifier();}
-  setTabs(tab);
-  // Populate content before it appears from the edge. Never redraw repeatedly during the pull.
-  if(!panelMap[kind].classList.contains('is-open')){
-    panelMap[kind].classList.add('is-peeking');
-    if(tab==='assets')renderList();
-    if(tab==='preview')renderPreview();
-  }
-  if(tab==='files'){inspectFiles();refreshProjectLibrary();}
-  if(tab==='settings'||tab==='developer')refreshStatus();
+  const changed=setTabs(tab);
+  if(changed && tab!=='files')++fileRenderGeneration;
+  const opening=!panelMap[kind].classList.contains('is-open');
+  if(opening)panelMap[kind].classList.add('is-peeking');
+  // Make the selected page visible first; expensive data work is requested separately.
+  if(tab==='assets')renderList();
+  if(tab==='properties')renderProperties();
+  if(tab==='preview')schedulePreview();
+  if(tab==='files' && (changed||opening)){inspectFiles();refreshProjectLibrary();}
+  if((tab==='settings'||tab==='developer') && changed && native)nativeCall('requestStatus');
   if(!app)$('nudge-panel').hidden=true;
   return kind;
 }
 function openTab(tab){
   if(drawerMotion.multi)return;
   const kind=showTab(tab);
-  if(currentPanel()===kind&&!drawerMotion.animation){refreshUI();return;}
+  if(currentPanel()===kind&&!drawerMotion.animation)return;
   const other=kind==='app'?'sheet':'app';
   if(panelMap[other].classList.contains('is-open')){
     panelMap[other].classList.remove('is-open');panelMap[other].setAttribute('aria-hidden','true');
@@ -249,7 +270,6 @@ function openTab(tab){
   }
   const start=drawerMotion.animation?.kind===kind?dragDistance[kind]??0:0;
   moveDrawer(kind,1,start);
-  refreshUI();
 }
 function closeTab(){
   if(drawerMotion.active){drawerMotion.active.cancelled=true;drawerMotion.active=null;}
@@ -335,7 +355,7 @@ function endDrawerTouch(kind,e){
     if(Math.abs(dx)>Math.abs(dy)*1.4&&(span>=63||(span>37&&fast))){
       const tabs=['assets','properties','preview'],index=tabs.indexOf(state.tab),next=index+(dx<0?1:-1);
       if(next>=0&&next<tabs.length)showTab(tabs[next]);
-      refreshUI();e.preventDefault();
+      e.preventDefault();
     }
     return;
   }
@@ -349,7 +369,7 @@ function endDrawerTouch(kind,e){
     g.track.add(p*panelSpan(kind),e.timeStamp);
     const velocity=g.track.velocity().pixelsPerMs;
     const target=settleTarget(p,g.track,panelSpan(kind));
-    moveDrawer(kind,target,p,velocity);
+    moveDrawer(kind,target,p,velocity,'gesture');
     e.preventDefault();
     return;
   }
@@ -795,8 +815,8 @@ function paintMagnifier(screen,imagePt){
   box.style.left=limit(left,0,window.innerWidth-150)+'px';box.style.top=limit(top,0,window.innerHeight-177)+'px';box.hidden=false;
 }
 
-function refreshStatus(){if(!native){$('app-version').textContent='Browser test';$('app-folder').textContent='Browser mode';$('log-state').textContent='Browser console';return;}
-  try{const info=JSON.parse(native.appStatus());state.nativeInfo=info;state.projectKey=info.projectKey||'android';applyAppearance();
+function refreshStatus(payload=null){if(!native){$('app-version').textContent='Browser test';$('app-folder').textContent='Browser mode';$('log-state').textContent='Browser console';return;}
+  try{const info=payload||JSON.parse(native.appStatus());state.nativeInfo=info;state.projectKey=info.projectKey||'android';applyAppearance();
     $('app-version').textContent=`v${info.version} (${info.versionCode})`;$('app-folder').textContent=info.workFolder||'Not configured';
     $('folder-name').textContent=info.projectName||'No project open';
     $('settings-project-name').textContent=info.projectName||'No project open';
@@ -809,11 +829,47 @@ function refreshStatus(){if(!native){$('app-version').textContent='Browser test'
     $('bundle-project').disabled=!info.hasBase;
     $('log-state').textContent=info.logsEnabled?'Enabled in APK':'Disabled in build';updateButtons();}
   catch(e){errorMessage(e);}}
-function inspectFiles(){const box=$('file-list');box.replaceChildren();if(!native){box.textContent='Browser testing: use Open Image, then Save to download PNGs and JSON.';return;}
+let filesRequest=0;
+let fileRenderGeneration=0;
+let displayedFileProject='';
+function inspectFiles(){
+  const box=$('file-list');
+  if(!native){box.textContent='Browser testing: use Open Image, then Save to download PNGs and JSON.';return;}
   if(!state.nativeInfo?.hasProject){box.textContent='Open a project to inspect its files.';return;}
-  try{const data=JSON.parse(native.inspectFiles());if(!data.length){box.textContent='No project files yet.';return;}
-    for(const file of data){const btn=document.createElement('button');btn.className='file-entry';const name=document.createElement('span'),size=document.createElement('small');name.textContent=file.name;size.textContent=file.size>=0?`${Math.ceil(file.size/1024)} KB`:'';btn.append(name,size);btn.addEventListener('click',()=>{if(file.openable)nativeCall('openExport',file.name);else toast('Use your Android file manager to inspect this file.');});box.append(btn);}}
-  catch(e){errorMessage(e);}}
+  // Native DocumentsProvider enumeration is asynchronous, never block a tab click.
+  const request=++filesRequest;
+  ++fileRenderGeneration; // Abort a previous progressive render when a newer refresh begins.
+  const key=state.nativeInfo.projectKey||'';
+  if(displayedFileProject!==key){displayedFileProject=key;box.textContent='Checking project files…';}
+  else if(!box.children.length)box.textContent='Checking project files…';
+  nativeCall('inspectFilesAsync',request,key);
+}
+function showFiles(data){
+  if(data.request!==filesRequest||data.projectKey!==(state.nativeInfo?.projectKey||''))return;
+  if(state.tab!=='files')return;
+  const box=$('file-list'),items=data.items||[];
+  if(data.error){box.textContent='Cannot list project files: '+data.error;return;}
+  if(!items.length){box.textContent='No project files yet.';return;}
+  const generation=++fileRenderGeneration;
+  const batchSize=48;
+  let index=0;box.replaceChildren();
+  function appendChunk(){
+    if(generation!==fileRenderGeneration)return;
+    const frag=document.createDocumentFragment();
+    const end=Math.min(index+batchSize,items.length);
+    for(;index<end;index++){
+      const file=items[index],btn=document.createElement('button');
+      btn.className='file-entry';const name=document.createElement('span'),size=document.createElement('small');
+      name.textContent=file.name;size.textContent=file.size>=0?`${Math.ceil(file.size/1024)} KB`:'';
+      btn.append(name,size);
+      btn.addEventListener('click',()=>{if(file.openable)nativeCall('openExport',file.name);else toast('Use your Android file manager to inspect this file.');});
+      frag.append(btn);
+    }
+    box.append(frag);
+    if(index<items.length)requestAnimationFrame(appendChunk);
+  }
+  appendChunk();
+}
 function reloadProject(){if(state.project.dirty){createModal({title:'Discard unsaved changes?',message:'This replaces the current canvas with the files already saved on disk.',question:true}).then(yes=>{if(yes){clearDraft();loadNativeProject();}});}
   else loadNativeProject();}
 function loadNativeProject(){refreshStatus();if(!native){$('browser-manifest').click();return;}
@@ -942,7 +998,7 @@ function applyNudge(dx,dy){const a=state.project.active;if(!a||state.busy)return
 function refreshUpdate(data){$('update-status').textContent=data.message||'';$('install-update').hidden=!['available','permission'].includes(data.state);if(data.message)toast(data.message);}
 window.GuiCutterReceive=(type,data={})=>{
   try{
-    if(type==='status'){refreshStatus();return;}
+    if(type==='status'){refreshStatus(data);return;}
     if(type==='system-theme'){state.nativeInfo=state.nativeInfo||{};state.nativeInfo.systemDark=!!data.dark;if(settings.theme==='system'){applyAppearance();scheduleDraw();}return;}
     if(type==='workspace'){
       if(data.message)toast(data.message);refreshStatus();
@@ -950,6 +1006,7 @@ window.GuiCutterReceive=(type,data={})=>{
       return;
     }
     if(type==='projects'){if(data.error)toast(data.error);else renderProjectLibrary(data.items||[]);return;}
+     if(type==='files'){showFiles(data);return;}
     if(type==='project'){
       if(!data.ok){state.importAfterCreation=false;toast(data.message||'Cannot open project');return;}
       refreshStatus();loadNativeProject();refreshProjectLibrary();

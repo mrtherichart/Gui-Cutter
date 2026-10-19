@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.webkit.WebResourceResponse
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
@@ -127,10 +128,39 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
             val f = parent.findFile(name) ?: continue
             result.put(JSONObject().put("name", name).put("size", f.length()).put("openable", name == imageName))
         }
-        val exports = parent.findFile("exports")
-        exports?.listFiles()?.filter { it.isFile }?.sortedBy { it.name }?.forEach { f ->
-            result.put(JSONObject().put("name", "exports/${f.name}").put("size", f.length())
-                .put("openable", f.name?.endsWith(".png", ignoreCase = true) == true))
+        val exports = parent.findFile("exports") ?: return result
+        // One provider query instead of DocumentFile.listFiles() followed by an
+        // individual metadata query for each exported asset. Keep the fallback
+        // for document providers that cannot serve the child-document query.
+        val entries = try {
+            val parentId = DocumentsContract.getDocumentId(exports.uri)
+            val children = DocumentsContract.buildChildDocumentsUriUsingTree(exports.uri, parentId)
+            val projection = arrayOf(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_SIZE,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            val found = mutableListOf<Pair<String, Long>>()
+            resolver.query(children, projection, null, null, null)?.use { cursor ->
+                val nameColumn = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val sizeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+                val mimeColumn = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (cursor.moveToNext()) {
+                    val mime = if(mimeColumn>=0 && !cursor.isNull(mimeColumn))cursor.getString(mimeColumn) else null
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                    val name = cursor.getString(nameColumn) ?: continue
+                    val size = if(sizeColumn>=0 && !cursor.isNull(sizeColumn))cursor.getLong(sizeColumn) else -1L
+                    found.add(name to size)
+                }
+            } ?: error("Provider did not return a file cursor")
+            found
+        } catch (e: Exception) {
+            DevLog.write("FILES", "Query fallback: ${e.message}")
+            exports.listFiles().filter { it.isFile }.map { it.name.orEmpty() to it.length() }
+        }
+        entries.sortedBy { it.first }.forEach { (name, size) ->
+            result.put(JSONObject().put("name", "exports/$name").put("size", size)
+                .put("openable", name.endsWith(".png", ignoreCase = true)))
         }
         return result
     }
