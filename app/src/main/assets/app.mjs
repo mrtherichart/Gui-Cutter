@@ -4,7 +4,7 @@ import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle,
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
 const settingsKey='gui-cutter.preferences.v1';
-const defaults={edgeSnap:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true};
+const defaults={edgeSnap:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true,assetView:'list'};
 let settings={...defaults};
 try{
   const saved=JSON.parse(localStorage.getItem(settingsKey)||'{}');
@@ -14,6 +14,7 @@ try{
 }catch{}
 settings.glassTransparency=Math.round(Math.max(0,Math.min(65,Number(settings.glassTransparency)||0)));
 settings.glassBlur=Math.round(Math.max(0,Math.min(36,Number(settings.glassBlur)||0)));
+settings.assetView=settings.assetView==='grid'?'grid':'list';
 const state={project:new Project(),view:new Viewport(),image:null,edges:null,overlay:null,mode:'edit',pointers:new Map(),gesture:null,gestureData:null,previewRect:null,snapPoint:null,busy:false,tab:'assets',projectKey:'browser',nativeInfo:null,toastTimer:0,draftTimer:0,imageSeq:0,nudge:1,canvasDpr:1,lastStatus:'Ready',imageLoaded:false,pendingSave:null,lastNavigationTap:null};
 const ctx=$('editor').getContext('2d');
 const appCtx=()=>({iw:state.image?.naturalWidth||0,ih:state.image?.naturalHeight||0});
@@ -40,10 +41,30 @@ function updateButtons(){
   $('project-title').title=state.project.dirty?'Unsaved changes':'Project files';
 }
 function refreshUI(){updateButtons();renderList();renderProperties();renderPreview();scheduleDraw();}
-function resolvedTheme(){return settings.theme==='dark'||(settings.theme==='system'&&window.matchMedia('(prefers-color-scheme:dark)').matches)?'dark':'light';}
+// Live gestures only update the relevant visible controls once per animation frame.
+// Never reconstruct the entire asset library while a finger is moving.
+let liveChromeQueued=false;
+function refreshDuringGesture(){
+  scheduleDraw();
+  if(liveChromeQueued)return;
+  liveChromeQueued=true;
+  requestAnimationFrame(()=>{
+    liveChromeQueued=false;
+    updateButtons();
+    if(bottomTabVisible('properties'))renderProperties();
+  });
+}
+function resolvedTheme(){
+  if(settings.theme!=='system')return settings.theme;
+  return (native&&state.nativeInfo?.systemDark!==undefined
+    ? !!state.nativeInfo.systemDark : window.matchMedia('(prefers-color-scheme: dark)').matches)
+    ? 'dark':'light';
+}
 function applyAppearance(){
   const root=document.documentElement;
-  root.dataset.theme=resolvedTheme();root.dataset.motion=settings.smoothMotion?'on':'off';
+  const theme=resolvedTheme();
+  root.dataset.theme=theme;root.dataset.motion=settings.smoothMotion?'on':'off';
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme==='dark'?'#121C2A':'#EEF3F7');
   root.style.setProperty('--glass-alpha',String((100-settings.glassTransparency)/100));
   root.style.setProperty('--glass-blur',settings.glassBlur+'px');
   $('glass-opacity').value=String(settings.glassTransparency);
@@ -116,6 +137,46 @@ function bindSheetGesture(){
   grip.addEventListener('pointerup',finish);grip.addEventListener('pointercancel',finish);
   grip.addEventListener('keydown',e=>{if(e.key==='Escape'||e.key==='Enter'||e.key===' '){e.preventDefault();closeTab();}});
 }
+/* Drawer navigation intentionally stays separate from image pointers.
+   Axis checks protect ordinary taps, lists, sliders and vertical scrolling. */
+function bindSimpleSwipe(element,axis,callback,{min=68,skipControls=false}={}){
+  let start=null,swiped=false;
+  element.addEventListener('pointerdown',e=>{
+    if(e.pointerType!=='touch'||e.isPrimary===false)return;
+    if(skipControls&&e.target.closest('button,input,select,textarea'))return;
+    start={id:e.pointerId,x:e.clientX,y:e.clientY};swiped=false;
+  },{passive:true});
+  element.addEventListener('pointerup',e=>{
+    if(!start||start.id!==e.pointerId)return;
+    const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;
+    const horizontal=axis==='x',primary=horizontal?dx:dy,other=horizontal?dy:dx;
+    if(Math.abs(primary)>=min&&Math.abs(primary)>Math.abs(other)*1.55){
+      swiped=true;e.preventDefault();callback(primary);
+      requestAnimationFrame(()=>{swiped=false;});
+    }
+  });
+  element.addEventListener('pointercancel',()=>{start=null;});
+  element.addEventListener('click',e=>{
+    if(swiped){e.preventDefault();e.stopImmediatePropagation();swiped=false;}
+  },true);
+}
+function bindNavigationGestures(){
+  // Dedicated, narrow edge target: opening the app drawer cannot start a crop.
+  bindSimpleSwipe($('drawer-edge'),'x',dx=>{if(dx>0&&!isAnyDrawerOpen())openTab('files');},{min:54});
+  bindSimpleSwipe($('app-drawer').querySelector('.app-panel-header'),'x',dx=>{if(dx<0)closeTab();});
+  bindSimpleSwipe($('app-drawer').querySelector('.app-nav'),'x',dx=>{if(dx<0)closeTab();});
+  bindSimpleSwipe($('drawer').querySelector('.sheet-header'),'y',dy=>{if(dy>0)closeTab();});
+  const sheetTabs=['assets','properties','preview'];
+  bindSimpleSwipe($('drawer').querySelector('.sheet-tabs'),'x',dx=>{
+    if(!$('drawer').classList.contains('is-open'))return;
+    const ix=sheetTabs.indexOf(state.tab),next=ix+(dx<0?1:-1);
+    if(next>=0&&next<sheetTabs.length)openTab(sheetTabs[next]);
+  },{min:54});
+  // Pulling upward on the compact chrome reveals information without another button.
+  bindSimpleSwipe($('selection-strip'),'y',dy=>{if(dy<0&&!isAnyDrawerOpen())openTab('properties');},{min:52});
+  bindSimpleSwipe($('bottom-bar'),'y',dy=>{if(dy<0&&!isAnyDrawerOpen())openTab('assets');},{min:63});
+}
+
 function createModal({title,initial='',message='',question=false}){
   return new Promise(resolve=>{
     const dlg=document.createElement('dialog');dlg.className='modal-dialog';
@@ -150,7 +211,30 @@ function redraw(){
     if(settings.hideUnselected&&i!==state.project.selected)continue;
     const a=state.project.assets[i],selected=i===state.project.selected;
     const tl=v.toScreen(a.x,a.y),br=v.toScreen(a.x+a.w,a.y+a.h);
-    ctx.strokeStyle=selected?'#ff9c3d':'rgba(93,184,232,.85)';ctx.lineWidth=selected?1.8:1.1;ctx.setLineDash([]);ctx.strokeRect(tl.x+.5,tl.y+.5,br.x-tl.x,br.y-tl.y);
+    ctx.save();ctx.setLineDash([]);
+    if(selected){
+      // Reference: a thin gold-white rim with a warm ambient bloom, not a heavy orange rectangle.
+      ctx.shadowColor='rgba(255,167,61,.70)';ctx.shadowBlur=11;
+      ctx.strokeStyle='rgba(255,176,75,.84)';ctx.lineWidth=2.25;
+      ctx.strokeRect(tl.x+.5,tl.y+.5,br.x-tl.x,br.y-tl.y);
+      ctx.shadowBlur=0;ctx.strokeStyle='#fff0c5';ctx.lineWidth=.95;
+      ctx.strokeRect(tl.x+.5,tl.y+.5,br.x-tl.x,br.y-tl.y);
+      // Short measurement ticks stay screen-sized even at extreme zoom.
+      ctx.strokeStyle='rgba(255,241,207,.86)';ctx.lineWidth=1;
+      const rw=br.x-tl.x,rh=br.y-tl.y;
+      if(rw>=38)for(const u of [.25,.5,.75]){
+        const tx=tl.x+rw*u;ctx.beginPath();ctx.moveTo(tx,tl.y-5);ctx.lineTo(tx,tl.y+5);
+        ctx.moveTo(tx,br.y-5);ctx.lineTo(tx,br.y+5);ctx.stroke();
+      }
+      if(rh>=38)for(const u of [.25,.5,.75]){
+        const ty=tl.y+rh*u;ctx.beginPath();ctx.moveTo(tl.x-5,ty);ctx.lineTo(tl.x+5,ty);
+        ctx.moveTo(br.x-5,ty);ctx.lineTo(br.x+5,ty);ctx.stroke();
+      }
+    }else{
+      ctx.strokeStyle='rgba(93,184,232,.85)';ctx.lineWidth=1.1;
+      ctx.strokeRect(tl.x+.5,tl.y+.5,br.x-tl.x,br.y-tl.y);
+    }
+    ctx.restore();
     if(settings.labels){ctx.font='12px system-ui';const tx=tl.x+4,ty=tl.y-7;
       const text=a.asset_id,width=ctx.measureText(text).width;
       ctx.fillStyle='#253e4edb';ctx.fillRect(tx-3,ty-13,width+6,16);ctx.fillStyle='#fff';ctx.fillText(text,tx,ty);}
@@ -161,13 +245,21 @@ function redraw(){
       for(const x of [x1,x2]){ctx.moveTo(x,tl.y);ctx.lineTo(x,br.y);}
       for(const y of [y1,y2]){ctx.moveTo(tl.x,y);ctx.lineTo(br.x,y);}ctx.stroke();ctx.setLineDash([]);
     }
-    if(selected){for(const [name,[hx,hy]]of Object.entries(handles(a))){
-      const q=v.toScreen(hx,hy),middle=name.startsWith('edge_'),guide=['left','right','top','bottom'].includes(name);
-      const radius=name==='move'?6:middle?4.2:guide?4.3:6;
-      ctx.fillStyle=name==='move'?'rgba(19,35,52,.82)':'#fffaf3';ctx.strokeStyle='#ff9c3d';ctx.lineWidth=2;
-      ctx.beginPath();ctx.arc(q.x,q.y,radius,0,Math.PI*2);ctx.fill();ctx.stroke();
-      if(name==='move'){ctx.strokeStyle='#ffffff';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(q.x-3,q.y);ctx.lineTo(q.x+3,q.y);ctx.moveTo(q.x,q.y-3);ctx.lineTo(q.x,q.y+3);ctx.stroke();}
-    }}
+    if(selected){
+      for(const [name,[hx,hy]] of Object.entries(handles(a))){
+        const q=v.toScreen(hx,hy),corner=['tl','tr','bl','br'].includes(name),middle=name.startsWith('edge_'),moving=name==='move';
+        const radius=corner?7:middle?3.1:moving?5:3.8;
+        ctx.save();ctx.shadowColor='rgba(255,159,48,.83)';ctx.shadowBlur=corner?12:7;
+        ctx.fillStyle=moving?'rgba(23,32,43,.72)':'#fffaf0';
+        ctx.strokeStyle=corner?'#ff981e':'#f8ba62';ctx.lineWidth=corner?2.15:1.65;
+        ctx.beginPath();ctx.arc(q.x,q.y,radius,0,Math.PI*2);ctx.fill();ctx.stroke();
+        ctx.shadowBlur=0;
+        if(moving){ctx.strokeStyle='#ffe9bd';ctx.lineWidth=1;
+          ctx.beginPath();ctx.moveTo(q.x-2.6,q.y);ctx.lineTo(q.x+2.6,q.y);
+          ctx.moveTo(q.x,q.y-2.6);ctx.lineTo(q.x,q.y+2.6);ctx.stroke();}
+        ctx.restore();
+      }
+    }
   }
   if(state.previewRect){const a=state.previewRect,tl=v.toScreen(a.x,a.y),br=v.toScreen(a.x+a.w,a.y+a.h);
     ctx.lineWidth=2;ctx.setLineDash([7,4]);ctx.strokeStyle='#62d58f';ctx.strokeRect(tl.x,tl.y,br.x-tl.x,br.y-tl.y);ctx.setLineDash([]);}
@@ -194,7 +286,7 @@ async function openImageElement(src,loadManifest=true){
     if(seq!==state.imageSeq)return;
     state.image=image;state.imageLoaded=true;
     state.project.imageWidth=image.naturalWidth;state.project.imageHeight=image.naturalHeight;
-    state.edges=null;state.overlay=null;$('empty').hidden=true;
+    state.edges=null;state.overlay=null;assetThumbnails.clear();$('empty').hidden=true;
     if(loadManifest&&native){try{const json=native.readManifest();state.project.load(json?JSON.parse(json):{assets:[]});}
       catch(e){state.project.reset([]);errorMessage('Could not load manifest: '+e.message);}}
     else state.project.reset([]);
@@ -229,11 +321,50 @@ function buildOverlay(){if(!state.edges||!state.image)return;const {iw,ih}=appCt
   try{const temp=document.createElement('canvas');temp.width=iw;temp.height=ih;const cx=temp.getContext('2d');const id=cx.createImageData(iw,ih);for(let i=0;i<state.edges.length;i++)if(state.edges[i]){const j=i*4;id.data[j]=87;id.data[j+1]=215;id.data[j+2]=255;id.data[j+3]=110;}cx.putImageData(id,0,0);state.overlay=temp;scheduleDraw();}
   catch(e){settings.showEdges=false;saveSettings();errorMessage(e);}
 }
-function renderList(){const panel=$('asset-list');if(!bottomTabVisible('assets'))return;panel.replaceChildren();
-  for(let i=0;i<state.project.assets.length;i++){const a=state.project.assets[i],btn=document.createElement('button');btn.className='asset-item'+(state.project.selected===i?' active':'');
-    const title=document.createElement('span'),name=document.createElement('strong'),dim=document.createElement('small'),kind=document.createElement('span');name.textContent=a.asset_id;dim.textContent=`${a.w} × ${a.h} · ${a.x},${a.y}`;title.append(name,dim);
-    kind.textContent=a.kind==='nine_slice'?'9-slice':'Normal';kind.className='asset-kind';btn.append(title,kind);btn.addEventListener('click',()=>selectIndex(i));panel.append(btn);}
-  if(!state.project.assets.length){const el=document.createElement('p');el.textContent='No crops yet. Choose New to draw your first asset.';el.className='minor';panel.append(el);}
+// Thumbnail cache contains small canvases, never full-size source copies.
+const assetThumbnails=new Map();
+function cropThumbnail(asset){
+  const key=[state.imageSeq,asset.x,asset.y,asset.w,asset.h].join(':');
+  if(assetThumbnails.has(key))return assetThumbnails.get(key);
+  const canvas=document.createElement('canvas');canvas.width=96;canvas.height=72;
+  if(state.image){
+    const c=canvas.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
+    const scale=Math.min(96/asset.w,72/asset.h);
+    const w=asset.w*scale,h=asset.h*scale;
+    c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(96-w)/2,(72-h)/2,w,h);
+  }
+  if(assetThumbnails.size>=120)assetThumbnails.clear();
+  assetThumbnails.set(key,canvas);
+  return canvas;
+}
+function renderList(){
+  if(!bottomTabVisible('assets'))return;
+  const panel=$('asset-list'),oldScroll=panel.parentElement.scrollTop;
+  const grid=settings.assetView==='grid';
+  panel.classList.toggle('view-grid',grid);
+  panel.classList.toggle('view-list',!grid);
+  const toggle=$('toggle-asset-view');
+  toggle.title=grid?'Switch to list view':'Switch to grid view';
+  toggle.setAttribute('aria-label',toggle.title);toggle.setAttribute('aria-pressed',String(grid));
+  toggle.querySelector('use').setAttribute('href',grid?'#i-list':'#i-assets');
+  const fragment=document.createDocumentFragment();
+  for(let i=0;i<state.project.assets.length;i++){
+    const a=state.project.assets[i],btn=document.createElement('button');
+    btn.className='asset-item'+(state.project.selected===i?' active':'');
+    btn.type='button';btn.setAttribute('aria-label',a.asset_id+', '+a.w+' by '+a.h+' pixels');
+    const thumb=document.createElement('span');thumb.className='asset-thumb';
+    const canvas=document.createElement('canvas');canvas.width=96;canvas.height=72;
+    canvas.getContext('2d').drawImage(cropThumbnail(a),0,0);
+    thumb.append(canvas);
+    const title=document.createElement('span');title.className='asset-copy';
+    const name=document.createElement('strong'),dim=document.createElement('small'),kind=document.createElement('span');
+    name.textContent=a.asset_id;dim.textContent=a.w+' × '+a.h+' · '+a.x+','+a.y;
+    title.append(name,dim);kind.textContent=a.kind==='nine_slice'?'9-slice':'Normal';kind.className='asset-kind';
+    btn.append(thumb,title,kind);
+    btn.addEventListener('click',()=>selectIndex(i));fragment.append(btn);
+  }
+  if(!state.project.assets.length){const el=document.createElement('p');el.textContent='No crops yet. Choose New to draw your first asset.';el.className='minor';fragment.append(el);}
+  panel.replaceChildren(fragment);panel.parentElement.scrollTop=oldScroll;
 }
 const labels={x:'X',y:'Y',w:'Width',h:'Height',left:'9-slice left',top:'9-slice top',right:'9-slice right',bottom:'9-slice bottom'};
 function createNumericControls(){for(const key of Object.keys(labels)){const outer=document.createElement('div');outer.className='numeric-item';outer.dataset.key=key;
@@ -301,10 +432,10 @@ function handlePointerMove(e){if(!state.pointers.has(e.pointerId))return;e.preve
   if(state.gesture==='pan'){state.view.pan(p.x-previous.x,p.y-previous.y);scheduleDraw();return;}
   const g=state.gestureData,{iw,ih}=appCtx();
   if(state.gesture==='draw'){const target=screenSnap(p.x,p.y,null);state.previewRect=rectangle(g.anchor.x,g.anchor.y,target.x,target.y,iw,ih);scheduleDraw();return;}
-  if(state.gesture==='handle'){const target=screenSnap(p.x,p.y,g.handle);state.project.assets[g.index]=adjust(g.start,g.handle,target.x,target.y,iw,ih);refreshUI();showMagnifier(p,target);return;}
+  if(state.gesture==='handle'){const target=screenSnap(p.x,p.y,g.handle);state.project.assets[g.index]=adjust(g.start,g.handle,target.x,target.y,iw,ih);refreshDuringGesture();showMagnifier(p,target);return;}
   if(state.gesture==='move'){
     const pos=state.view.toImage(p.x,p.y);const dx=Math.round(pos.x-g.anchor.x),dy=Math.round(pos.y-g.anchor.y);
-    state.project.assets[g.index]=move(g.start,dx,dy,iw,ih);refreshUI();showMagnifier(p,pos);
+    state.project.assets[g.index]=move(g.start,dx,dy,iw,ih);refreshDuringGesture();showMagnifier(p,pos);
   }
 }
 async function finishDraw(r){state.previewRect=null;if(!r||r.w<2||r.h<2)return;
@@ -334,7 +465,7 @@ function showMagnifier(screen,imagePt){if(!settings.magnifier||!state.image)retu
 }
 
 function refreshStatus(){if(!native){$('app-version').textContent='Browser test';$('app-folder').textContent='Browser mode';$('log-state').textContent='Browser console';return;}
-  try{const info=JSON.parse(native.appStatus());state.nativeInfo=info;state.projectKey=info.projectKey||'android';
+  try{const info=JSON.parse(native.appStatus());state.nativeInfo=info;state.projectKey=info.projectKey||'android';applyAppearance();
     $('app-version').textContent=`v${info.version} (${info.versionCode})`;$('app-folder').textContent=info.folder;
     $('folder-name').textContent=info.folder;$('log-state').textContent=info.logsEnabled?'Enabled in APK':'Disabled in build';updateButtons();}
   catch(e){errorMessage(e);}}
@@ -370,6 +501,7 @@ function refreshUpdate(data){$('update-status').textContent=data.message||'';$('
 window.GuiCutterReceive=(type,data={})=>{
   try{
     if(type==='status'){refreshStatus();return;}
+    if(type==='system-theme'){state.nativeInfo=state.nativeInfo||{};state.nativeInfo.systemDark=!!data.dark;if(settings.theme==='system'){applyAppearance();scheduleDraw();}return;}
     if(type==='workspace'){if(data.message)toast(data.message);refreshStatus();if(data.selected){clearDraft();loadNativeProject();}return;}
     if(type==='image'){refreshStatus();if(data.ok){clearDraft();loadNativeProject();}else toast(data.message||'Image import cancelled');return;}
     if(type==='save'){state.busy=false;if(data.state==='success'){state.project.saved=state.pendingSave??state.project.saved;if(!state.project.dirty)clearDraft();else scheduleDraft();toast(`Saved ${data.count} crops`);inspectFiles();}else errorMessage(data.message||'Save failed');state.pendingSave=null;refreshUI();return;}
@@ -387,7 +519,7 @@ window.GuiCutterHandleBack=()=>{
 };
 
 function bind(){
-  createNumericControls();saveSettings();bindSheetGesture();sizeCanvas();window.addEventListener('resize',sizeCanvas);
+  createNumericControls();saveSettings();bindSheetGesture();bindNavigationGestures();sizeCanvas();window.addEventListener('resize',sizeCanvas);
   const themeMedia=window.matchMedia('(prefers-color-scheme:dark)');
   const followSystemTheme=()=>{if(settings.theme==='system'){applyAppearance();scheduleDraw();}};
   if(themeMedia.addEventListener)themeMedia.addEventListener('change',followSystemTheme);else themeMedia.addListener(followSystemTheme);
@@ -400,11 +532,15 @@ function bind(){
   $('setting-kind').addEventListener('change',e=>{settings.newKind=e.target.value;saveSettings();});
   $('explode-preview').addEventListener('change',e=>{settings.explodeNine=e.target.checked;saveSettings();renderPreview();});
   $('new-kind').addEventListener('click',()=>{settings.newKind='nine_slice';saveSettings();chooseMode('new');});
-  $('setting-theme').addEventListener('change',e=>{settings.theme=e.target.value;saveSettings();});
+  $('setting-theme').addEventListener('change',e=>{settings.theme=e.target.value;saveSettings();if(native)nativeCall('setUiTheme',settings.theme);});
   for(const [id,key] of [['glass-opacity','glassTransparency'],['glass-blur','glassBlur']]){
     $(id).addEventListener('input',e=>{settings[key]=e.target.valueAsNumber;applyAppearance();});
     $(id).addEventListener('change',()=>saveSettings());
   }
+  $('toggle-asset-view').addEventListener('click',()=>{
+    settings.assetView=settings.assetView==='grid'?'list':'grid';
+    saveSettings();renderList();
+  });
   $('project-btn').addEventListener('click',()=>openTab('files'));
   $('project-title').addEventListener('click',()=>openTab('files'));
   $('assets-btn').addEventListener('click',()=>openTab('assets'));$('properties-btn').addEventListener('click',()=>openTab('properties'));
@@ -444,7 +580,7 @@ function bind(){
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&state.project.dirty)scheduleDraft();});
   window.addEventListener('error',e=>{const msg=`${e.message} at ${e.filename}:${e.lineno}`;log('JS ERROR',msg);if(native)native.jsError(msg);});
   window.addEventListener('unhandledrejection',e=>{const msg=String(e.reason);log('PROMISE ERROR',msg);if(native)native.jsError(msg);});
-  refreshStatus();if(native)loadNativeProject();else{toast('Browser test: open an image to begin');}
+  refreshStatus();if(native){nativeCall('setUiTheme',settings.theme);loadNativeProject();}else{toast('Browser test: open an image to begin');}
   refreshUI();
 }
 bind();

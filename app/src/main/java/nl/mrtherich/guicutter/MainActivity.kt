@@ -1,6 +1,8 @@
 package nl.mrtherich.guicutter
 
 import android.annotation.SuppressLint
+import android.content.res.Configuration
+import android.graphics.Color
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -29,6 +31,30 @@ class MainActivity : ComponentActivity() {
         private set
     private lateinit var webView: WebView
     private val io = Executors.newSingleThreadExecutor()
+    private var barThemeMode = "system"
+    private fun systemDark(): Boolean =
+        resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+
+    fun applyBars(mode: String) {
+        barThemeMode = if (mode in listOf("system", "light", "dark")) mode else "system"
+        val dark = if (barThemeMode == "system") systemDark() else barThemeMode == "dark"
+        val color = Color.parseColor(if (dark) "#121C2A" else "#EEF3F7")
+        window.statusBarColor = color
+        window.navigationBarColor = color
+        if (android.os.Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+        WindowInsetsControllerCompat(window, webView).apply {
+            isAppearanceLightStatusBars = !dark
+            isAppearanceLightNavigationBars = !dark
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::webView.isInitialized) {
+            applyBars(barThemeMode)
+            sendEvent("system-theme", JSONObject().put("dark", systemDark()))
+        }
+    }
 
     private val folderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) try {
@@ -119,6 +145,7 @@ class MainActivity : ComponentActivity() {
         }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         setContentView(webView)
+        applyBars("system")
         WindowInsetsControllerCompat(window,webView).apply {
             systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
@@ -143,6 +170,7 @@ class MainActivity : ComponentActivity() {
         .put("imageStamp",projectIO.imageStamp())
         .put("projectKey",projectIO.projectKey())
         .put("logsEnabled",BuildConfig.DEV_LOGS_ENABLED)
+        .put("systemDark",systemDark())
         .put("platform","android")
     fun sendEvent(type:String,payload:JSONObject) {
         runOnUiThread {

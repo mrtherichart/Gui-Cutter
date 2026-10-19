@@ -5,6 +5,7 @@ import android.webkit.JavascriptInterface
 /** Minimal native capabilities, exposed only to packaged WebView content. */
 class NativeBridge(private val activity: MainActivity) {
     @JavascriptInterface fun appStatus(): String = activity.statusPayload().toString()
+    @JavascriptInterface fun setUiTheme(mode: String) = activity.runOnUiThread { activity.applyBars(mode) }
     @JavascriptInterface fun chooseFolder() = activity.runOnUiThread { activity.chooseFolder() }
     @JavascriptInterface fun selectImage() = activity.runOnUiThread { activity.selectImage() }
     @JavascriptInterface fun readManifest(): String = activity.projectIO.readManifest()

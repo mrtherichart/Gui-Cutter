@@ -13,6 +13,7 @@
 <symbol id="i-pointer" viewBox="0 0 24 24"><path d="m6 3 13 10-7 1-3 7z"/></symbol>
 <symbol id="i-crop" viewBox="0 0 24 24"><path d="M4 8V4h4 M16 4h4v4 M20 16v4h-4 M8 20H4v-4"/></symbol>
 <symbol id="i-nine" viewBox="0 0 24 24"><path d="M4 4h16v16H4z M9.5 4v16 M14.5 4v16 M4 9.5h16 M4 14.5h16"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M4 6h1 M4 12h1 M4 18h1"/></symbol>
 <symbol id="i-assets" viewBox="0 0 24 24"><path d="M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z"/></symbol>
 <symbol id="i-zoom" viewBox="0 0 24 24"><path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zm5.5-2 5 5"/></symbol>
 <symbol id="i-magnet" viewBox="0 0 24 24"><path d="M4 3h5v8H4z M15 3h5v8h-5z M4 11v4a8 8 0 0 0 16 0v-4"/></symbol>
@@ -47,7 +48,7 @@
         <button id="quick-nudge" class="icon-button" title="Pixel precision" aria-label="Pixel precision"><svg class="ico" aria-hidden="true"><use href="#i-precision"></use></svg></button>
         <button id="properties-btn" class="icon-button" title="Asset properties" aria-label="Asset properties"><svg class="ico" aria-hidden="true"><use href="#i-chevron"></use></svg></button>
       </div>
-      <nav class="float bottom-bar" aria-label="Zoom and workspace">
+      <nav id="bottom-bar" class="float bottom-bar" aria-label="Zoom and workspace">
         <button id="fit" class="icon-button" title="Fit image" aria-label="Fit image"><svg class="ico" aria-hidden="true"><use href="#i-fit"></use></svg></button>
         <input id="zoom-range" class="zoom-range" type="range" min="0" max="1000" value="450" aria-label="Zoom" title="Zoom in or out">
         <button id="zoom-label" class="zoom-value" title="Tap to fit image" aria-label="Fit image">100%</button>
@@ -59,6 +60,7 @@
       <div id="status" class="status" role="status" aria-live="polite" hidden></div>
       <button id="clean-restore" class="clean-restore" hidden title="Restore editor controls">Show tools</button>
     </div>
+    <div id="drawer-edge" class="drawer-edge" aria-hidden="true"></div>
     <div id="shade" class="shade" aria-hidden="true"></div>
     <!-- Application navigation remains on the left in every orientation. -->
     <aside id="app-drawer" class="drawer app-drawer" aria-label="Application drawer" aria-hidden="true">
@@ -123,7 +125,7 @@
       <nav class="sheet-tabs" aria-label="Editor panels"><button data-tab="assets">Assets</button><button data-tab="properties">Inspector</button><button data-tab="preview">Preview</button></nav>
       <div class="sheet-content">
         <section id="tab-assets" class="tab-pane" aria-label="Cropped assets">
-          <div class="section-heading first-heading"><span>Asset library</span><span class="overline">SELECT TO EDIT</span></div><div id="asset-list" class="asset-list"></div>
+          <div class="section-heading first-heading asset-heading"><span>Asset library</span><button id="toggle-asset-view" class="asset-view-toggle" aria-label="Show grid view" aria-pressed="false" title="Switch to grid view"><svg class="ico" aria-hidden="true"><use href="#i-assets"></use></svg></button></div><div id="asset-list" class="asset-list view-list"></div>
           <div class="action-row sticky-actions"><button id="new-from-list" class="primary">New crop</button><button id="rename">Rename</button><button id="delete" class="danger">Delete</button></div>
         </section>
         <section id="tab-properties" class="tab-pane" hidden aria-label="Inspector">
