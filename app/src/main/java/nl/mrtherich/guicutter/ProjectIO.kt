@@ -12,6 +12,8 @@ import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /** SAF workspace. No broad storage permission and no external server. */
 class ProjectIO(private val context: Context, private val storage: StorageAccess) {
@@ -20,8 +22,7 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
     private val imageName = "base.png"
     private val filenamePattern = Regex("[^A-Za-z0-9_-]")
 
-    private fun root(): DocumentFile = storage.getUri()?.let { DocumentFile.fromTreeUri(context, it) }
-        ?: error("Choose a project folder first")
+    private fun root(): DocumentFile = storage.activeProject()
     private fun folder(name: String): DocumentFile {
         val parent = root()
         return parent.findFile(name) ?: parent.createDirectory(name) ?: error("Cannot create $name")
@@ -32,9 +33,9 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
     private fun write(uri: Uri, input: InputStream) {
         resolver.openOutputStream(uri, "rwt")?.use { input.copyTo(it) } ?: error("Cannot write $uri")
     }
-    fun hasBase(): Boolean = storage.getUri()?.let { DocumentFile.fromTreeUri(context, it)?.findFile(imageName)?.isFile } == true
+    fun hasBase(): Boolean = try { root().findFile(imageName)?.isFile == true } catch (_:Exception){ false }
     fun imageStamp(): String {
-        val f = storage.getUri()?.let { DocumentFile.fromTreeUri(context, it)?.findFile(imageName) }
+        val f = try { root().findFile(imageName) } catch (_:Exception) { null }
         return if (f == null) "none" else "${f.lastModified()}-${f.length()}"
     }
     fun projectKey(): String {
@@ -43,7 +44,7 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
             .joinToString("") { "%02x".format(it) }
     }
     fun baseResponse(): WebResourceResponse? {
-        val f = storage.getUri()?.let { DocumentFile.fromTreeUri(context, it)?.findFile(imageName) } ?: return null
+        val f = try { root().findFile(imageName) } catch (_:Exception) { null } ?: return null
         val stream = resolver.openInputStream(f.uri) ?: return null
         return WebResourceResponse("image/png", null, stream).apply {
             responseHeaders = mapOf("Cache-Control" to "no-store", "X-Content-Type-Options" to "nosniff")
@@ -54,6 +55,52 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
         return resolver.openInputStream(f.uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
             ?: error("Cannot read manifest")
     }
+    /** Creates a recognizable empty project, allowing image import later. */
+    fun initializeProject() {
+        val project=root()
+        check(project.findFile(manifestName)==null) { "Project already initialized" }
+        val empty=JSONObject().put("image_path",imageName).put("assets",JSONArray()).toString(2)
+        val target=file(project,manifestName,"application/json")
+        empty.byteInputStream(Charsets.UTF_8).use { write(target.uri,it) }
+    }
+
+    /** ZIP is built with Android's standard Java ZIP implementation; no external dependency. */
+    fun exportZip(destination: Uri): Int {
+        val project=root()
+        check(project.findFile(manifestName)?.isFile==true) { "Save the project before exporting a ZIP" }
+        check(project.findFile(imageName)?.isFile==true) { "This project needs a base image" }
+        val out=resolver.openOutputStream(destination,"wt") ?: error("Cannot create ZIP")
+        val zipRoot=(project.name?:"Gui-Cutter-project").replace('/', '_') + "/"
+        var files=0
+        val visited=mutableSetOf<String>()
+        ZipOutputStream(out.buffered()).use { zip ->
+            fun append(dir:DocumentFile,prefix:String,depth:Int) {
+                check(depth<=10) { "Project folder is nested too deeply" }
+                for(child in dir.listFiles().sortedBy{it.name}){
+                    if(child.uri==destination)continue
+                    val name=(child.name?:continue).replace('/', '_').replace(92.toChar(),'_')
+                    if(name=="."||name==".."||name.isBlank())continue
+                    val entryName=prefix+name+(if(child.isDirectory)"/" else "")
+                    check(visited.add(entryName)) { "Duplicate ZIP entry: $entryName" }
+                    if(child.isDirectory){
+                        zip.putNextEntry(ZipEntry(entryName));zip.closeEntry()
+                        append(child,entryName,depth+1)
+                    } else if(child.isFile){
+                        check(files<10000) { "Too many files to bundle" }
+                        zip.putNextEntry(ZipEntry(entryName))
+                        resolver.openInputStream(child.uri)?.use { it.copyTo(zip,64*1024) }
+                            ?: error("Cannot read $entryName")
+                        zip.closeEntry();files++
+                    }
+                }
+            }
+            zip.putNextEntry(ZipEntry(zipRoot));zip.closeEntry()
+            append(project,zipRoot,0)
+        }
+        DevLog.write("EXPORT","Bundled $files files into ZIP")
+        return files
+    }
+
     fun importImage(uri: Uri) {
         val source = resolver.openInputStream(uri) ?: error("Cannot open selected image")
         val bitmap = source.use { BitmapFactory.decodeStream(it) } ?: error("Not a supported image")

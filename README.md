@@ -56,3 +56,13 @@ Both drawer grips are literal bars attached to their panels, flush with the left
 A single gesture controller tracks finger distance and release velocity. The last deliberate movement direction can override the current drawer position, and a critically damped spring brings the panel gently to rest without bouncing. The full non-interactive surface of each panel accepts directional swipes; horizontal swipes switch the bottom sheet's three tabs. Vertical scrolling remains native. The bottom panel closes via a downward swipe in scrollable content only when the scroll is already at its top. Buttons, switches, inputs, and sliders keep their own gestures. A second finger cancels an active drawer drag. Tapping the exposed grip opens its shelf.
 
 Physics and direction locking live in `drawer-motion.mjs` with regression tests. The offline project format, Android app identity, signing, and WebView core are unchanged.
+
+## v0.1.6 — named projects and ZIP bundles
+
+Gui Cutter now has a single persistent **work folder**, chosen in Workspace → Preferences. New work is organized into one uniquely named child folder per project. Workspace offers **New project** (enter a name, then import), **From image** (automatic filename-based name), a list of existing projects, **Import image** for an empty project, **Reload**, and **Export ZIP**. A conflict creates a numbered name instead of overwriting another project.
+
+Previously selected single-folder projects remain available as legacy projects without being moved, renamed or deleted. Changing the work folder retains old contents in their original location; the user can choose that folder again to recover them. Open Project enumerates project folders inside the chosen work folder. The original `base.png`, `ui_slices.json`, and `exports/` format is unchanged.
+
+**Export ZIP** uses `java.util.zip.ZipOutputStream` built into Android and `ActivityResultContracts.CreateDocument("application/zip")` to let the user choose the destination. The archive contains the project folder and all its files, including PNG crops. Unsaved edits are saved through the normal Save Sync path first. ZIP export streams contents without loading them all into memory.
+
+Legacy projects are still accessible by pointing the work-folder setting at the old project directory. Browser-only mode remains a lightweight editor and does not expose Android's SAF project management.

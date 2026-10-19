@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Bundle
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
         private set
     private lateinit var webView: WebView
     private val io = Executors.newSingleThreadExecutor()
+    private var imageCreatesProject = false
     private var barThemeMode = "system"
     private fun systemDark(): Boolean =
         resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
@@ -60,7 +62,8 @@ class MainActivity : ComponentActivity() {
         if (uri != null) try {
             contentResolver.takePersistableUriPermission(uri,Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             storage.saveUri(uri)
-            sendEvent("workspace",JSONObject().put("selected",true).put("message","Folder: ${storage.folderName()}"))
+            sendEvent("workspace",JSONObject().put("selected",true).put("message","Work folder: ${storage.folderName()}"))
+            listProjects()
         } catch (e: Exception) {
             DevLog.write("STORAGE",e.stackTraceToString())
             sendEvent("workspace",JSONObject().put("message","Folder error: ${e.message}"))
@@ -68,14 +71,46 @@ class MainActivity : ComponentActivity() {
         sendEvent("status",statusPayload())
     }
     private val imagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) { sendEvent("image",JSONObject().put("ok",false).put("message","Image selection cancelled")); return@registerForActivityResult }
+        val createsProject=imageCreatesProject
+        imageCreatesProject=false
+        if (uri == null) {
+            sendEvent("image",JSONObject().put("ok",false).put("message","Image selection cancelled"))
+            return@registerForActivityResult
+        }
         io.execute {
             try {
+                val name=if(createsProject){
+                    val filename=try {
+                        contentResolver.query(uri,arrayOf(OpenableColumns.DISPLAY_NAME),null,null,null)?.use { cursor ->
+                            if(cursor.moveToFirst())cursor.getString(0) else null
+                        }
+                    } catch (_: Exception){null}
+                    val suggested=(filename ?: "Untitled").substringBeforeLast('.',filename ?: "Untitled").ifBlank { "Untitled" }
+                    val project=storage.createProject(suggested)
+                    projectIO.initializeProject()
+                    project
+                }else storage.projectName()
                 projectIO.importImage(uri)
-                sendEvent("image",JSONObject().put("ok",true))
+                sendEvent("image",JSONObject().put("ok",true).put("name",name))
+                sendEvent("status",statusPayload())
+                listProjects()
             } catch (e: Exception) {
                 DevLog.write("IMAGE",e.stackTraceToString())
                 sendEvent("image",JSONObject().put("ok",false).put("message",e.message))
+            }
+        }
+    }
+    private val zipExporter = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if(uri == null) {
+            sendEvent("zip",JSONObject().put("message","ZIP export cancelled"))
+        } else io.execute {
+            try {
+                val count=projectIO.exportZip(uri)
+                sendEvent("zip",JSONObject().put("ok",true).put("count",count)
+                    .put("message","Exported ZIP with $count files"))
+            }catch(e:Exception){
+                DevLog.write("ZIP",e.stackTraceToString())
+                sendEvent("zip",JSONObject().put("ok",false).put("message","ZIP export failed: ${e.message}"))
             }
         }
     }
@@ -164,8 +199,12 @@ class MainActivity : ComponentActivity() {
     fun statusPayload() = JSONObject()
         .put("version",BuildConfig.VERSION_NAME)
         .put("versionCode",BuildConfig.VERSION_CODE)
-        .put("folder",storage.folderName())
-        .put("hasWorkspace",storage.getUri()!=null)
+        .put("folder",storage.projectName().ifBlank { "No project" })
+        .put("projectName",storage.projectName())
+        .put("projectId",storage.activeKey()?:"")
+        .put("workFolder",storage.folderName())
+        .put("hasProject",storage.getUri()!=null)
+        .put("hasWorkspace",storage.hasWorkspace())
         .put("hasBase",projectIO.hasBase())
         .put("imageStamp",projectIO.imageStamp())
         .put("projectKey",projectIO.projectKey())
@@ -180,7 +219,50 @@ class MainActivity : ComponentActivity() {
         }
     }
     fun chooseFolder() = folderPicker.launch(null)
-    fun selectImage() = imagePicker.launch(arrayOf("image/png","image/jpeg","image/webp","image/bmp"))
+    fun selectImage() { imageCreatesProject=false; imagePicker.launch(arrayOf("image/png","image/jpeg","image/webp","image/bmp")) }
+    fun newFromImage() {
+        check(storage.hasWorkspace()) { "Choose a work folder in Preferences first" }
+        imageCreatesProject=true
+        imagePicker.launch(arrayOf("image/png","image/jpeg","image/webp","image/bmp"))
+    }
+    fun createProject(name:String) {
+        io.execute {
+            try {
+                val actual=storage.createProject(name)
+                projectIO.initializeProject()
+                sendEvent("project",JSONObject().put("ok",true).put("name",actual).put("created",true))
+                sendEvent("status",statusPayload())
+                listProjects()
+            }catch(e:Exception){
+                DevLog.write("PROJECT",e.stackTraceToString())
+                sendEvent("project",JSONObject().put("ok",false).put("message",e.message))
+            }
+        }
+    }
+    fun openProject(id:String) {
+        io.execute {
+            try{
+                val name=storage.openProject(id)
+                sendEvent("project",JSONObject().put("ok",true).put("name",name).put("created",false))
+                sendEvent("status",statusPayload())
+                listProjects()
+            }catch(e:Exception){
+                DevLog.write("PROJECT",e.stackTraceToString())
+                sendEvent("project",JSONObject().put("ok",false).put("message",e.message))
+            }
+        }
+    }
+    fun listProjects() {
+        io.execute {
+            try { sendEvent("projects",JSONObject().put("items",storage.listProjects())) }
+            catch(e:Exception){DevLog.write("PROJECTS",e.stackTraceToString());sendEvent("projects",JSONObject().put("error",e.message))}
+        }
+    }
+    fun exportProjectZip() {
+        val name=storage.projectName().ifBlank { "Gui-Cutter-project" }
+            .replace(Regex("[^a-zA-Z0-9 _.-]"),"_")
+        zipExporter.launch("$name.zip")
+    }
     fun saveProject(json:String) {
         io.execute {
             try {val count=projectIO.saveProject(json);sendEvent("save",JSONObject().put("state","success").put("count",count))}

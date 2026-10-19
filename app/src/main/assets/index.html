@@ -28,7 +28,7 @@
 <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol></svg>
   <main id="workspace" class="workspace">
     <canvas id="editor" aria-label="Image cutting canvas"></canvas>
-    <div id="empty" class="empty"><div class="empty-icon">▧</div><h1>Gui Cutter</h1><p>Select a project folder and import a screenshot to begin.</p><button id="empty-open" class="primary">Open project</button><button id="empty-image" class="secondary">Open image</button></div>
+    <div id="empty" class="empty"><div class="empty-icon">▧</div><h1>Gui Cutter</h1><p id="empty-caption">Create a project or open an image to begin.</p><button id="empty-open" class="primary">New project</button><button id="empty-image" class="secondary">From image</button></div>
     <div id="controls">
       <header class="float top-bar" aria-label="Editor actions">
         <button id="project-btn" class="icon-button" title="Project and settings" aria-label="Open project menu"><svg class="ico" aria-hidden="true"><use href="#i-menu"></use></svg></button>
@@ -75,18 +75,39 @@
         <button data-tab="developer" class="app-nav-item"><svg class="ico" aria-hidden="true"><use href="#i-activity"></use></svg><span>Developer</span></button>
       </nav>
       <div class="app-content">
-        <section id="tab-files" class="tab-pane" aria-label="Workspace files">
-          <div class="section-intro"><span class="overline">01 / STORAGE</span><h3>Project files</h3><p>Keep your source image and exports in one accessible Android folder.</p></div>
-          <div class="section-card"><div class="item-row"><span>Current workspace</span><strong id="folder-name">No folder selected</strong></div>
-            <div class="action-row"><button id="choose-folder" class="primary">Choose folder</button><button id="open-image">Import image</button></div>
-            <div class="action-row"><button id="reload-project">Reload project</button><button id="inspect-files">Refresh files</button></div>
+        <section id="tab-files" class="tab-pane" aria-label="Projects">
+          <div class="section-intro"><span class="overline">01 / PROJECTS</span><h3>Workspace</h3><p>Create, revisit and export your cutout projects.</p></div>
+          <div class="section-card project-launch">
+            <div class="project-current"><span class="overline">CURRENT PROJECT</span><strong id="folder-name">No project open</strong><small id="project-location">Choose or create a project to begin</small></div>
+            <div class="project-primary-actions">
+              <button id="create-project" class="primary"><span class="action-glyph">＋</span> New project</button>
+              <button id="new-from-image"><span class="action-glyph">▧</span> From image</button>
+            </div>
+            <div class="project-secondary-actions">
+              <button id="open-project-list">Open project <span aria-hidden="true">›</span></button>
+              <button id="open-image">Import image</button>
+            </div>
+            <div class="project-secondary-actions">
+              <button id="bundle-project">Export ZIP</button>
+              <button id="reload-project">Reload</button>
+            </div>
           </div>
-          <div class="section-heading"><span>Files</span><span class="overline">BASE / MANIFEST / EXPORTS</span></div>
+          <div class="section-heading" id="project-library-heading"><span>Your projects</span><button class="plain-refresh" id="refresh-project-list" title="Refresh project list" aria-label="Refresh project list">↻</button></div>
+          <div id="project-list" class="project-list"><p class="hint">Select a work folder in Preferences to see your projects.</p></div>
+          <div class="section-heading"><span>Project files</span><span class="overline">SOURCE / MANIFEST / PNGS</span></div>
           <div id="file-list" class="file-list"></div>
-          <p class="hint">Saved files live in <code>base.png</code>, <code>ui_slices.json</code> and <code>exports/</code>. Use Save Sync to commit changes.</p>
+          <div class="action-row"><button id="inspect-files">Refresh files</button></div>
         </section>
         <section id="tab-settings" class="tab-pane" hidden aria-label="Preferences">
-          <div class="section-intro"><span class="overline">02 / PERSONALISE</span><h3>Appearance</h3><p>Adjust the material, not the artwork. Every change is previewed instantly.</p></div>
+          <div class="section-intro"><span class="overline">02 / STORAGE</span><h3>Work folder</h3><p>Set once. Every new project is saved in its own subfolder.</p></div>
+          <div class="section-card storage-preference">
+            <div class="storage-current"><span>Gui Cutter work folder</span><strong id="work-folder-name">Not configured</strong></div>
+            <button id="choose-folder" class="primary folder-picker-button">Choose work folder</button>
+            <p class="hint">Older project folders are preserved. Change this only when you want to use another location.</p>
+          </div>
+          <div class="section-heading"><span>Appearance</span><span class="overline">MATERIAL / THEME</span></div>
+          
+          <p class="hint appearance-intro">Adjust the glass surface without changing your artwork.</p>
           <div class="section-card"><label class="field"><span>Color scheme</span><select id="setting-theme"><option value="system">Follow system</option><option value="dark">Night</option><option value="light">Daylight</option></select></label>
             <div class="control-divider"></div>
             <label class="range-setting" for="glass-opacity"><span class="range-heading"><strong>Transparency</strong><output id="glass-opacity-value" for="glass-opacity">24%</output></span><span class="setting-hint">How much of the canvas appears through the controls</span><input id="glass-opacity" type="range" min="0" max="65" step="1" value="24"></label>

@@ -7,6 +7,11 @@ class NativeBridge(private val activity: MainActivity) {
     @JavascriptInterface fun appStatus(): String = activity.statusPayload().toString()
     @JavascriptInterface fun setUiTheme(mode: String) = activity.runOnUiThread { activity.applyBars(mode) }
     @JavascriptInterface fun chooseFolder() = activity.runOnUiThread { activity.chooseFolder() }
+    @JavascriptInterface fun createProject(name:String) = activity.createProject(name)
+    @JavascriptInterface fun openProject(id:String) = activity.openProject(id)
+    @JavascriptInterface fun listProjects() = activity.listProjects()
+    @JavascriptInterface fun newFromImage() = activity.runOnUiThread { activity.newFromImage() }
+    @JavascriptInterface fun exportProjectZip() = activity.runOnUiThread { activity.exportProjectZip() }
     @JavascriptInterface fun selectImage() = activity.runOnUiThread { activity.selectImage() }
     @JavascriptInterface fun readManifest(): String = activity.projectIO.readManifest()
     @JavascriptInterface fun inspectFiles(): String = activity.projectIO.inspectFiles().toString()

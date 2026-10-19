@@ -46,7 +46,7 @@ function updateButtons(){
   for(const el of document.querySelectorAll('[data-mode]')){el.classList.toggle('active',el.dataset.mode===state.mode&&(state.mode!=='new'||settings.newKind==='normal'));}
   $('new-kind').classList.toggle('active',state.mode==='new'&&settings.newKind==='nine_slice');
   $('snap').classList.toggle('selected',settings.edgeSnap);$('snap').setAttribute('aria-pressed',String(settings.edgeSnap));
-  $('project-title').textContent=state.nativeInfo?.folder|| (state.image?'Browser image':'No project');
+  $('project-title').textContent=state.nativeInfo?.projectName || (state.image?'Browser image':'No project');
   $('project-title').title=state.project.dirty?'Unsaved changes':'Project files';
 }
 function refreshUI(){updateButtons();renderList();renderProperties();renderPreview();scheduleDraw();}
@@ -204,7 +204,7 @@ function showTab(tab){
     if(tab==='assets')renderList();
     if(tab==='preview')renderPreview();
   }
-  if(tab==='files')inspectFiles();
+  if(tab==='files'){inspectFiles();refreshProjectLibrary();}
   if(tab==='settings'||tab==='developer')refreshStatus();
   if(!app)$('nudge-panel').hidden=true;
   return kind;
@@ -643,10 +643,17 @@ function showMagnifier(screen,imagePt){if(!settings.magnifier||!state.image)retu
 
 function refreshStatus(){if(!native){$('app-version').textContent='Browser test';$('app-folder').textContent='Browser mode';$('log-state').textContent='Browser console';return;}
   try{const info=JSON.parse(native.appStatus());state.nativeInfo=info;state.projectKey=info.projectKey||'android';applyAppearance();
-    $('app-version').textContent=`v${info.version} (${info.versionCode})`;$('app-folder').textContent=info.folder;
-    $('folder-name').textContent=info.folder;$('log-state').textContent=info.logsEnabled?'Enabled in APK':'Disabled in build';updateButtons();}
+    $('app-version').textContent=`v${info.version} (${info.versionCode})`;$('app-folder').textContent=info.workFolder||'Not configured';
+    $('folder-name').textContent=info.projectName||'No project open';
+    $('work-folder-name').textContent=info.workFolder||'Not configured';
+    $('project-location').textContent=info.hasProject?`In ${info.workFolder}`:'Choose New project or From image';
+    $('open-image').disabled=!info.hasProject||!!info.hasBase;
+    $('reload-project').disabled=!info.hasProject;
+    $('bundle-project').disabled=!info.hasBase;
+    $('log-state').textContent=info.logsEnabled?'Enabled in APK':'Disabled in build';updateButtons();}
   catch(e){errorMessage(e);}}
 function inspectFiles(){const box=$('file-list');box.replaceChildren();if(!native){box.textContent='Browser testing: use Open Image, then Save to download PNGs and JSON.';return;}
+  if(!state.nativeInfo?.hasProject){box.textContent='Open a project to inspect its files.';return;}
   try{const data=JSON.parse(native.inspectFiles());if(!data.length){box.textContent='No project files yet.';return;}
     for(const file of data){const btn=document.createElement('button');btn.className='file-entry';const name=document.createElement('span'),size=document.createElement('small');name.textContent=file.name;size.textContent=file.size>=0?`${Math.ceil(file.size/1024)} KB`:'';btn.append(name,size);btn.addEventListener('click',()=>{if(file.openable)nativeCall('openExport',file.name);else toast('Use your Android file manager to inspect this file.');});box.append(btn);}}
   catch(e){errorMessage(e);}}
@@ -655,11 +662,101 @@ function reloadProject(){if(state.project.dirty){createModal({title:'Discard uns
 function loadNativeProject(){refreshStatus();if(!native){$('browser-manifest').click();return;}
   if(!state.nativeInfo?.hasBase){state.image=null;state.imageLoaded=false;$('empty').hidden=false;state.project.reset([]);refreshUI();return;}
   const stamp=state.nativeInfo.imageStamp||Date.now();openImageElement(`https://appassets.androidplatform.net/project/base.png?v=${encodeURIComponent(stamp)}`);}
-function chooseFolder(){if(native)nativeCall('chooseFolder');else toast('Browser preview: choose an image instead.');}
-function importImage(){if(native){if(!state.nativeInfo?.hasWorkspace){toast('Choose a project folder first.');openTab('files');return;}
-    if(state.project.dirty){createModal({title:'Replace current image?',question:true,message:'Unsaved changes will be discarded. Importing also replaces base.png in the chosen folder.'}).then(yes=>{if(yes){clearDraft();nativeCall('selectImage');}});}
-    else nativeCall('selectImage');
-  }else $('browser-image').click();}
+// Native projects share a single persistent Android work folder.
+function refreshProjectLibrary(){
+  if(!native){
+    $('project-list').textContent='Browser preview: projects are stored by Android.';
+    return;
+  }
+  if(!state.nativeInfo?.hasWorkspace){
+    $('project-list').innerHTML='<p class="hint">Set the work folder in Preferences to start.</p>';
+    return;
+  }
+  nativeCall('listProjects');
+}
+function renderProjectLibrary(items){
+  const box=$('project-list'),fragment=document.createDocumentFragment();
+  for(const entry of items){
+    const button=document.createElement('button');button.type='button';
+    button.className='project-entry'+(entry.active?' active':'');
+    const icon=document.createElement('span');icon.className='project-icon';icon.textContent=entry.hasImage?'▧':'◇';
+    const details=document.createElement('span');details.className='project-details';
+    const title=document.createElement('strong');title.textContent=entry.name;
+    const sub=document.createElement('small');sub.textContent=entry.active?'Current project':entry.hasImage?'Open to continue editing':'Awaiting image';
+    details.append(title,sub);
+    const chevron=document.createElement('span');chevron.className='project-open-chevron';chevron.textContent='›';
+    button.append(icon,details,chevron);
+    button.addEventListener('click',()=>switchProject(entry.id));
+    fragment.append(button);
+  }
+  if(!items.length){const p=document.createElement('p');p.className='hint';p.textContent='No projects yet. Create one above.';fragment.append(p);}
+  box.replaceChildren(fragment);
+}
+async function confirmLeave(){
+  if(!state.project.dirty)return true;
+  return !!await createModal({title:'Leave current project?',question:true,
+    message:'You have unsaved crop changes. Continue without saving them?'});
+}
+async function switchProject(id){
+  if(!native)return;
+  if(id===state.nativeInfo?.projectId){closeTab();return;}
+  if(!await confirmLeave())return;
+  clearDraft();
+  nativeCall('openProject',id);
+}
+async function createNewProject(){
+  if(native&&!state.nativeInfo?.hasWorkspace){
+    toast('First choose a work folder in Preferences.');openTab('settings');return;
+  }
+  if(!await confirmLeave())return;
+  const name=await createModal({title:'New project',initial:'Untitled project',
+    message:'Create a project folder, then choose its image.'});
+  if(!name)return;
+  if(native){
+    state.importAfterCreation=true;
+    nativeCall('createProject',name);
+  }else{
+    state.browserProjectName=name;
+    $('browser-image').click();
+  }
+}
+async function newFromImage(){
+  if(native&&!state.nativeInfo?.hasWorkspace){
+    toast('First choose a work folder in Preferences.');openTab('settings');return;
+  }
+  if(!await confirmLeave())return;
+  if(native)nativeCall('newFromImage');
+  else $('browser-image').click();
+}
+function showProjectLibrary(){
+  if(!native){toast('Project list is available in the Android app.');return;}
+  refreshProjectLibrary();
+  $('project-library-heading').scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function chooseFolder(){
+  if(!await confirmLeave())return;
+  if(native)nativeCall('chooseFolder');
+  else toast('Work folder is selected by Android. Browser mode uses downloads.');
+}
+function importImage(){
+  if(native){
+    if(!state.nativeInfo?.hasProject){newFromImage();return;}
+    if(state.nativeInfo.hasBase){toast('Use “From image” to start a new project.');return;}
+    nativeCall('selectImage');
+  }else $('browser-image').click();
+}
+async function exportProjectZip(){
+  if(!native){toast('ZIP export is available in the Android APK.');return;}
+  if(!state.nativeInfo?.hasBase){toast('Import an image first.');return;}
+  if(state.busy)return;
+  if(state.project.dirty){
+    const yes=await createModal({title:'Save before packaging?',question:true,
+      message:'Save your latest crops and manifest before creating the ZIP?'});
+    if(!yes)return;
+    state.zipAfterSave=true;
+    saveProject();
+  }else nativeCall('exportProjectZip');
+}
 function browserDownload(name,blob){const a=document.createElement('a'),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
 async function saveProject(){if(!state.image||state.busy)return;
   try{state.project.assets=verifyAssets(state.project.assets,state.project.imageWidth,state.project.imageHeight);}catch(e){errorMessage(e);return;}
@@ -679,9 +776,37 @@ window.GuiCutterReceive=(type,data={})=>{
   try{
     if(type==='status'){refreshStatus();return;}
     if(type==='system-theme'){state.nativeInfo=state.nativeInfo||{};state.nativeInfo.systemDark=!!data.dark;if(settings.theme==='system'){applyAppearance();scheduleDraw();}return;}
-    if(type==='workspace'){if(data.message)toast(data.message);refreshStatus();if(data.selected){clearDraft();loadNativeProject();}return;}
-    if(type==='image'){refreshStatus();if(data.ok){clearDraft();loadNativeProject();}else toast(data.message||'Image import cancelled');return;}
-    if(type==='save'){state.busy=false;if(data.state==='success'){state.project.saved=state.pendingSave??state.project.saved;if(!state.project.dirty)clearDraft();else scheduleDraft();toast(`Saved ${data.count} crops`);inspectFiles();}else errorMessage(data.message||'Save failed');state.pendingSave=null;refreshUI();return;}
+    if(type==='workspace'){
+      if(data.message)toast(data.message);refreshStatus();
+      if(data.selected){clearDraft();loadNativeProject();refreshProjectLibrary();}
+      return;
+    }
+    if(type==='projects'){if(data.error)toast(data.error);else renderProjectLibrary(data.items||[]);return;}
+    if(type==='project'){
+      if(!data.ok){state.importAfterCreation=false;toast(data.message||'Cannot open project');return;}
+      refreshStatus();loadNativeProject();refreshProjectLibrary();
+      if(data.created&&state.importAfterCreation){
+        state.importAfterCreation=false;nativeCall('selectImage');
+      }else{closeTab();toast('Opened '+data.name);}
+      return;
+    }
+    if(type==='image'){
+      refreshStatus();
+      if(data.ok){clearDraft();loadNativeProject();refreshProjectLibrary();closeTab();}
+      else toast(data.message||'Image import cancelled');
+      return;
+    }
+    if(type==='zip'){toast(data.message||'ZIP export finished');return;}
+    if(type==='save'){
+      state.busy=false;const exportAfter=!!state.zipAfterSave;state.zipAfterSave=false;
+      if(data.state==='success'){
+        state.project.saved=state.pendingSave??state.project.saved;
+        if(!state.project.dirty)clearDraft();else scheduleDraft();
+        toast(`Saved ${data.count} crops`);inspectFiles();
+        if(exportAfter&&!state.project.dirty)nativeCall('exportProjectZip');
+      }else errorMessage(data.message||'Save failed');
+      state.pendingSave=null;refreshUI();return;
+    }
     if(type==='update'){refreshUpdate(data);return;}
     if(data.message)toast(data.message);
   }catch(e){errorMessage(e);}
@@ -740,8 +865,14 @@ function bind(){
   $('new-from-list').addEventListener('click',()=>{closeTab();chooseMode('new');toast('Drag on the image to define a crop.');});
   $('rename').addEventListener('click',renameSelected);$('delete').addEventListener('click',deleteSelected);
   $('apply-props').addEventListener('click',applyProps);
-  $('choose-folder').addEventListener('click',chooseFolder);$('empty-open').addEventListener('click',()=>{openTab('files');if(!native)importImage();});
-  $('open-image').addEventListener('click',importImage);$('empty-image').addEventListener('click',importImage);
+  $('choose-folder').addEventListener('click',chooseFolder);
+  $('create-project').addEventListener('click',createNewProject);
+  $('new-from-image').addEventListener('click',newFromImage);
+  $('open-project-list').addEventListener('click',showProjectLibrary);
+  $('refresh-project-list').addEventListener('click',refreshProjectLibrary);
+  $('bundle-project').addEventListener('click',exportProjectZip);
+  $('empty-open').addEventListener('click',createNewProject);
+  $('open-image').addEventListener('click',importImage);$('empty-image').addEventListener('click',newFromImage);
   $('reload-project').addEventListener('click',reloadProject);$('inspect-files').addEventListener('click',inspectFiles);
   $('check-update').addEventListener('click',()=>nativeCall('checkUpdates'));
   $('install-update').addEventListener('click',()=>nativeCall('installUpdate'));
@@ -760,7 +891,7 @@ function bind(){
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&state.project.dirty)scheduleDraft();});
   window.addEventListener('error',e=>{const msg=`${e.message} at ${e.filename}:${e.lineno}`;log('JS ERROR',msg);if(native)native.jsError(msg);});
   window.addEventListener('unhandledrejection',e=>{const msg=String(e.reason);log('PROMISE ERROR',msg);if(native)native.jsError(msg);});
-  refreshStatus();if(native){nativeCall('setUiTheme',settings.theme);loadNativeProject();}else{toast('Browser test: open an image to begin');}
+  refreshStatus();if(native){nativeCall('setUiTheme',settings.theme);loadNativeProject();refreshProjectLibrary();}else{toast('Browser test: open an image to begin');}
   refreshUI();
 }
 bind();
