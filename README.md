@@ -66,3 +66,11 @@ Previously selected single-folder projects remain available as legacy projects w
 **Export ZIP** uses `java.util.zip.ZipOutputStream` built into Android and `ActivityResultContracts.CreateDocument("application/zip")` to let the user choose the destination. The archive contains the project folder and all its files, including PNG crops. Unsaved edits are saved through the normal Save Sync path first. ZIP export streams contents without loading them all into memory.
 
 Legacy projects are still accessible by pointing the work-folder setting at the old project directory. Browser-only mode remains a lightweight editor and does not expose Android's SAF project management.
+
+## v0.1.7 — phone precision controls
+
+New normal or nine-slice crops: tapping the image stamps a crop using the selected crop's exact size, kind and nine-slice margins; dragging always draws custom dimensions. Without a selected asset, a tap alone cannot create an arbitrary crop.
+
+Two independent icon-only bottom-bar toggles control source-image edge snapping and crop-to-crop alignment. Crop snapping uses screen-pixel tolerance and aligns independent horizontal/vertical edges or centers, showing only faint temporary grey dashed lines when an alignment is active. Snap toggles, tools, Fit, Undo/Redo and precision controls give brief contextual feedback. Desktop hover shows icon hints without permanent labels.
+
+The asset library now pans and selectively zooms to a crop when it is tapped; already visible assets do not cause movement. Optional haptics are provided through the Android vibration service (with browser fallback) when a snap engages or a new crop is completed. Existing project structure, save status dot, project/ZIP management and drawer gestures remain unchanged.

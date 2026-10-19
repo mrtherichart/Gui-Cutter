@@ -283,6 +283,13 @@ class MainActivity : ComponentActivity() {
         val message=try { storage.testFolder() }catch(e:Exception){DevLog.write("STORAGE",e.stackTraceToString());"Folder test failed: ${e.message}"}
         sendEvent("workspace",JSONObject().put("message",message))
     }}
+    fun hapticTick() {
+        try {
+            val vib=getSystemService(VIBRATOR_SERVICE) as? android.os.Vibrator ?: return
+            if (android.os.Build.VERSION.SDK_INT>=26 && vib.hasVibrator())
+                vib.vibrate(android.os.VibrationEffect.createOneShot(12,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        }catch(e:Exception){DevLog.write("HAPTIC",e.message?:"Unavailable")}
+    }
     fun exportLog()=logExporter.launch("Gui-Cutter-devlog.txt")
     override fun onDestroy() {
         updates.close();io.shutdown()

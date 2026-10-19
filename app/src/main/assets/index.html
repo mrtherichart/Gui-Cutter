@@ -16,6 +16,7 @@
 <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11 M9 12h11 M9 18h11 M4 6h1 M4 12h1 M4 18h1"/></symbol>
 <symbol id="i-assets" viewBox="0 0 24 24"><path d="M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z"/></symbol>
 <symbol id="i-zoom" viewBox="0 0 24 24"><path d="M10.5 18a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15zm5.5-2 5 5"/></symbol>
+<symbol id="i-crop-align" viewBox="0 0 24 24"><path d="M3 5h5v5H3z M16 14h5v5h-5z M3 14v5h5 M16 5v5h5 M12 3v18"/></symbol>
 <symbol id="i-magnet" viewBox="0 0 24 24"><path d="M4 3h5v8H4z M15 3h5v8h-5z M4 11v4a8 8 0 0 0 16 0v-4"/></symbol>
 <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/></symbol>
@@ -53,7 +54,8 @@
         <input id="zoom-range" class="zoom-range" type="range" min="0" max="1000" value="450" aria-label="Zoom" title="Zoom in or out">
         <button id="zoom-label" class="zoom-value" title="Tap to fit image" aria-label="Fit image">100%</button>
         <span class="separator"></span>
-        <button id="snap" class="snap-button selected" title="Toggle edge snapping" aria-label="Toggle edge snapping"><svg class="ico" aria-hidden="true"><use href="#i-magnet"></use></svg><span>Snap</span></button>
+        <button id="snap" class="snap-button selected" type="button" title="Image edge snapping" aria-label="Toggle image edge snapping" aria-pressed="true"><svg class="ico" aria-hidden="true"><use href="#i-magnet"></use></svg></button>
+        <button id="crop-snap" class="snap-button" type="button" title="Crop alignment snapping" aria-label="Toggle crop alignment snapping" aria-pressed="false"><svg class="ico" aria-hidden="true"><use href="#i-crop-align"></use></svg></button>
         <span class="separator subtle"></span>
         <button id="assets-btn" class="icon-button assets-button" title="Assets" aria-label="Open asset list"><svg class="ico" aria-hidden="true"><use href="#i-assets"></use></svg></button>
       </nav>
@@ -127,6 +129,8 @@
           <div class="section-card compact-card">
             <label class="switch"><span>Smooth motion<small>Polished, lightweight transitions</small></span><input data-setting="smoothMotion" type="checkbox"></label>
             <label class="switch"><span>Smart edge snapping<small>Detect and align to source artwork</small></span><input data-setting="edgeSnap" type="checkbox"></label>
+            <label class="switch"><span>Crop alignment snapping<small>Align edges and centers with existing crops</small></span><input data-setting="cropSnap" type="checkbox"></label>
+            <label class="switch"><span>Haptic feedback<small>Light response to snapping and crop completion</small></span><input data-setting="haptics" type="checkbox"></label>
             <label class="switch"><span>Show detected edges</span><input data-setting="showEdges" type="checkbox"></label>
             <label class="switch"><span>Hide unselected crops</span><input data-setting="hideUnselected" type="checkbox"></label>
             <label class="switch"><span>Canvas asset labels</span><input data-setting="labels" type="checkbox"></label>

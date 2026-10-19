@@ -1,11 +1,12 @@
 import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} from './model.mjs';
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
+import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
 import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt} from './drawer-motion.mjs';
 
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
 const settingsKey='gui-cutter.preferences.v1';
-const defaults={edgeSnap:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true,assetView:'list',gizmoTint:'champagne'};
+const defaults={edgeSnap:true,cropSnap:false,haptics:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true,assetView:'list',gizmoTint:'champagne'};
 let settings={...defaults};
 try{
   const saved=JSON.parse(localStorage.getItem(settingsKey)||'{}');
@@ -24,6 +25,7 @@ const tintChoices={
 };
 if(!tintChoices[settings.gizmoTint])settings.gizmoTint='champagne';
 const state={project:new Project(),view:new Viewport(),image:null,edges:null,overlay:null,mode:'edit',pointers:new Map(),gesture:null,gestureData:null,previewRect:null,snapPoint:null,busy:false,tab:'assets',projectKey:'browser',nativeInfo:null,toastTimer:0,draftTimer:0,imageSeq:0,nudge:1,canvasDpr:1,lastStatus:'Ready',imageLoaded:false,pendingSave:null,lastNavigationTap:null};
+state.alignGuides=[];state.snapMemory='';state.lastSnapAt=0;state.focusEpoch=0;
 const ctx=$('editor').getContext('2d');
 const appCtx=()=>({iw:state.image?.naturalWidth||0,ih:state.image?.naturalHeight||0});
 
@@ -46,6 +48,7 @@ function updateButtons(){
   for(const el of document.querySelectorAll('[data-mode]')){el.classList.toggle('active',el.dataset.mode===state.mode&&(state.mode!=='new'||settings.newKind==='normal'));}
   $('new-kind').classList.toggle('active',state.mode==='new'&&settings.newKind==='nine_slice');
   $('snap').classList.toggle('selected',settings.edgeSnap);$('snap').setAttribute('aria-pressed',String(settings.edgeSnap));
+  $('crop-snap').classList.toggle('selected',settings.cropSnap);$('crop-snap').setAttribute('aria-pressed',String(settings.cropSnap));
   $('project-title').textContent=state.nativeInfo?.projectName || (state.image?'Browser image':'No project');
   $('project-title').title=state.project.dirty?'Unsaved changes':'Project files';
 }
@@ -104,7 +107,30 @@ function scheduleDraft(){clearTimeout(state.draftTimer);state.draftTimer=setTime
 },300);}
 function clearDraft(){try{localStorage.removeItem('gui-cutter.draft.'+state.projectKey);}catch{}}
 function change(){state.project.commit();refreshUI();scheduleDraft();}
-function selectIndex(i){state.project.selected=i;refreshUI();}
+function focusAsset(asset){
+  if(!asset||!state.image)return;
+  const canvas=$('editor'),sheet=$('drawer');
+  const open=sheet.classList.contains('is-open');
+  const bottom=open?Math.max(140,sheet.getBoundingClientRect().top-canvas.getBoundingClientRect().top):canvas.clientHeight;
+  const target=focusTarget(state.view,asset,{width:canvas.clientWidth,height:canvas.clientHeight,visibleBottom:bottom});
+  if(!target?.changed)return;
+  const from={x:state.view.x,y:state.view.y,scale:state.view.scale},epoch=++state.focusEpoch;
+  if(!settings.smoothMotion||matchMedia('(prefers-reduced-motion: reduce)').matches){
+    Object.assign(state.view,target);setZoomLabel();scheduleDraw();return;
+  }
+  const started=performance.now();
+  function animate(now){
+    if(epoch!==state.focusEpoch)return;
+    const t=Math.min(1,(now-started)/230),e=1-Math.pow(1-t,3);
+    state.view.x=from.x+(target.x-from.x)*e;
+    state.view.y=from.y+(target.y-from.y)*e;
+    state.view.scale=from.scale+(target.scale-from.scale)*e;
+    setZoomLabel();scheduleDraw();
+    if(t<1)requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+}
+function selectIndex(i){state.project.selected=i;refreshUI();focusAsset(state.project.active);}
 function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}state.mode=mode;state.previewRect=null;state.gesture=null;updateButtons();scheduleDraw();}
 const applicationTabs=new Set(['files','settings','developer']);
 const panelMap={app:$('app-drawer'),sheet:$('drawer')};
@@ -440,6 +466,7 @@ function redraw(){
   }
   if(state.previewRect){const a=state.previewRect,tl=v.toScreen(a.x,a.y),br=v.toScreen(a.x+a.w,a.y+a.h);
     ctx.save();ctx.lineWidth=2.2;ctx.setLineDash([7,4]);ctx.shadowColor='rgba(66,239,144,.7)';ctx.shadowBlur=11;ctx.strokeStyle='#60e9a0';ctx.strokeRect(tl.x,tl.y,br.x-tl.x,br.y-tl.y);ctx.shadowBlur=0;ctx.lineWidth=.95;ctx.strokeStyle='#f6fff7';ctx.strokeRect(tl.x,tl.y,br.x-tl.x,br.y-tl.y);ctx.restore();}
+  paintAlignmentGuides(v);
   if(state.snapPoint){const p=v.toScreen(state.snapPoint.x,state.snapPoint.y);ctx.strokeStyle='#55edff';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(p.x-9,p.y);ctx.lineTo(p.x+9,p.y);ctx.moveTo(p.x,p.y-9);ctx.lineTo(p.x,p.y+9);ctx.stroke();}
 }
 let queued=false;
@@ -576,7 +603,42 @@ function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('
   $('preview-label').textContent=`${a.asset_id} · ${a.w} × ${a.h}${exploded?' · exploded preview':''}`;
 }
 
-function cancelSingle(){const g=state.gestureData;if(g?.before)state.project.restoreSnapshot(g.before);state.previewRect=null;state.snapPoint=null;state.gesture=null;state.gestureData=null;refreshUI();}
+function tactile(){
+  if(!settings.haptics)return;
+  try{if(native&&typeof native.hapticTick==='function')native.hapticTick();else navigator.vibrate?.(12);}catch{}
+}
+function announceSnap(signature){
+  if(!signature){state.snapMemory='';return;}
+  if(signature!==state.snapMemory){
+    state.snapMemory=signature;
+    if(performance.now()-state.lastSnapAt>140){state.lastSnapAt=performance.now();tactile();}
+  }
+}
+function applyCropAlignment(rect,mode,handle=null,exclude=-1){
+  if(!settings.cropSnap){state.alignGuides=[];return rect;}
+  const {iw,ih}=appCtx();
+  const result=alignRect(rect,state.project.assets,{scale:state.view.scale,mode,handle,exclude,iw,ih});
+  state.alignGuides=result.guides;
+  announceSnap(result.found?'crop:'+result.guides.map(g=>g.axis+':'+g.at).join('|'):'');
+  return result.rect;
+}
+function paintAlignmentGuides(view){
+  if(!settings.cropSnap||!state.alignGuides?.length)return;
+  ctx.save();ctx.lineWidth=1;ctx.strokeStyle='rgba(153,166,176,.53)';ctx.setLineDash([2,5]);
+  for(const g of state.alignGuides){
+    ctx.beginPath();
+    if(g.axis==='x'){
+      const x=view.toScreen(g.at,0).x;
+      ctx.moveTo(x,view.toScreen(0,g.start).y);
+      ctx.lineTo(x,view.toScreen(0,g.end).y);
+    }else{
+      const y=view.toScreen(0,g.at).y;
+      ctx.moveTo(view.toScreen(g.start,0).x,y);
+      ctx.lineTo(view.toScreen(g.end,0).x,y);
+    }ctx.stroke();
+  }ctx.restore();
+}
+function cancelSingle(){state.alignGuides=[];state.snapMemory='';const g=state.gestureData;if(g?.before)state.project.restoreSnapshot(g.before);state.previewRect=null;state.snapPoint=null;state.gesture=null;state.gestureData=null;refreshUI();}
 function startPinch(){cancelSingle();const pts=[...state.pointers.values()].slice(0,2),a=pts[0],b=pts[1],mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
   state.gesture='pinch';state.gestureData={distance:Math.hypot(a.x-b.x,a.y-b.y)||1,scale:state.view.scale,anchor:state.view.toImage(mx,my)};
 }
@@ -584,7 +646,13 @@ function startSingle(p){if(!state.image||state.busy)return;const {iw,ih}=appCtx(
   const base={x:Math.round(limit(pt.x,0,iw)),y:Math.round(limit(pt.y,0,ih))};
   state.gestureData={screen:{x:p.x,y:p.y},anchor:base,before:state.project.snapshot(),start:null,index:state.project.selected};
   if(state.mode==='navigate'){state.gesture='pan';return;}
-  if(state.mode==='new'){state.gesture='draw';state.previewRect={x:limit(base.x,0,iw-1),y:limit(base.y,0,ih-1),w:1,h:1};scheduleDraw();return;}
+  if(state.mode==='new'){
+    state.gesture='draw';
+    const g=state.gestureData;g.template=state.project.active?{...state.project.active}:null;g.dragged=false;
+    const r=g.template?placeTemplate(g.template,base.x,base.y,iw,ih):null;
+    state.previewRect=r?applyCropAlignment(r,'move'):{x:limit(base.x,0,iw-1),y:limit(base.y,0,ih-1),w:1,h:1};
+    scheduleDraw();return;
+  }
   const active=state.project.active;const handle=hitHandle(active,v,p.x,p.y);
   if(handle){state.gesture=handle==='move'?'move':'handle';state.gestureData.handle=handle;state.gestureData.start={...active};return;}
   const index=hitBorder(state.project.assets,v,p.x,p.y);
@@ -594,9 +662,11 @@ function startSingle(p){if(!state.image||state.busy)return;const {iw,ih}=appCtx(
 function screenSnap(x,y,handle){const {iw,ih}=appCtx(),p=state.view.toImage(x,y);
   let target={x:Math.round(limit(p.x,0,iw)),y:Math.round(limit(p.y,0,ih)),found:false};
   if(settings.edgeSnap)target=snap(state.edges,iw,ih,target.x,target.y,handle);
-  state.snapPoint=target.found?target:null;return target;
+  state.snapPoint=target.found?target:null;
+  if(target.found)announceSnap('image:engaged');else if(!state.alignGuides?.length)announceSnap('');
+  return target;
 }
-function handlePointerDown(e){if(e.button!==0&&e.pointerType==='mouse')return;if(isAnyDrawerOpen()||state.busy)return;e.preventDefault();
+function handlePointerDown(e){state.focusEpoch++;if(e.button!==0&&e.pointerType==='mouse')return;if(isAnyDrawerOpen()||state.busy)return;e.preventDefault();
   try{$('editor').setPointerCapture(e.pointerId);}catch{}
   const point={x:e.clientX,y:e.clientY};state.pointers.set(e.pointerId,point);
   if(state.pointers.size===2)startPinch();else if(state.pointers.size===1)startSingle(point);
@@ -608,26 +678,44 @@ function handlePointerMove(e){if(!state.pointers.has(e.pointerId))return;e.preve
   if(state.gesture==='pinch'||!state.gestureData)return;
   if(state.gesture==='pan'){state.view.pan(p.x-previous.x,p.y-previous.y);scheduleDraw();return;}
   const g=state.gestureData,{iw,ih}=appCtx();
-  if(state.gesture==='draw'){const target=screenSnap(p.x,p.y,null);state.previewRect=rectangle(g.anchor.x,g.anchor.y,target.x,target.y,iw,ih);scheduleDraw();return;}
-  if(state.gesture==='handle'){const target=screenSnap(p.x,p.y,g.handle);state.project.assets[g.index]=adjust(g.start,g.handle,target.x,target.y,iw,ih);refreshDuringGesture();showMagnifier(p,target);return;}
+  if(state.gesture==='draw'){
+    if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)>=10)g.dragged=true;
+    if(g.dragged){
+      const pt=state.view.toImage(p.x,p.y);
+      const corner=(pt.y>=g.anchor.y?'b':'t')+(pt.x>=g.anchor.x?'r':'l');
+      const target=screenSnap(p.x,p.y,corner);
+      state.previewRect=applyCropAlignment(rectangle(g.anchor.x,g.anchor.y,target.x,target.y,iw,ih),'resize',corner);
+    }else if(g.template){
+      const pt=state.view.toImage(p.x,p.y),r=placeTemplate(g.template,pt.x,pt.y,iw,ih);
+      if(r)state.previewRect=applyCropAlignment(r,'move');
+    }
+    scheduleDraw();return;
+  }
+  if(state.gesture==='handle'){const target=screenSnap(p.x,p.y,g.handle);state.project.assets[g.index]=normalizeAsset(applyCropAlignment(adjust(g.start,g.handle,target.x,target.y,iw,ih),'resize',g.handle,g.index),iw,ih);refreshDuringGesture();showMagnifier(p,target);return;}
   if(state.gesture==='move'){
     const pos=state.view.toImage(p.x,p.y);const dx=Math.round(pos.x-g.anchor.x),dy=Math.round(pos.y-g.anchor.y);
-    state.project.assets[g.index]=move(g.start,dx,dy,iw,ih);refreshDuringGesture();showMagnifier(p,pos);
+    state.project.assets[g.index]=applyCropAlignment(move(g.start,dx,dy,iw,ih),'move',null,g.index);refreshDuringGesture();showMagnifier(p,pos);
   }
 }
-async function finishDraw(r){state.previewRect=null;if(!r||r.w<2||r.h<2)return;
+async function finishDraw(r,template=null){state.previewRect=null;if(!r||r.w<2||r.h<2)return;
   const id=await createModal({title:'New crop',initial:`asset_${String(state.project.assets.length+1).padStart(2,'0')}`,message:'Give this UI element a unique name.'});
-  if(!id)return;try{const {iw,ih}=appCtx();state.project.insert(makeAsset(id,settings.newKind,r.x,r.y,r.w,r.h,iw,ih));refreshUI();scheduleDraft();chooseMode('edit');toast(`Created ${id}`);}catch(e){errorMessage(e);}}
+  if(!id)return;try{const {iw,ih}=appCtx();const asset=makeAsset(id,template?.kind||settings.newKind,r.x,r.y,r.w,r.h,iw,ih);
+    if(template?.kind==='nine_slice')for(const side of ['left','right','top','bottom'])asset[side]=template[side];
+    state.project.insert(normalizeAsset(asset,iw,ih));tactile();refreshUI();scheduleDraft();chooseMode('edit');toast(`Created ${id}`);}catch(e){errorMessage(e);}}
 function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preventDefault();state.pointers.delete(e.pointerId);
   if(state.gesture==='pinch'){if(!state.pointers.size){state.gesture=null;state.gestureData=null;}state.lastNavigationTap=null;scheduleDraw();return;}
-  const action=state.gesture,r=state.previewRect,g=state.gestureData;state.gesture=null;state.gestureData=null;state.previewRect=null;state.snapPoint=null;$('magnifier').hidden=true;
+  const action=state.gesture,r=state.previewRect,g=state.gestureData;state.gesture=null;state.gestureData=null;state.previewRect=null;state.snapPoint=null;state.alignGuides=[];state.snapMemory='';$('magnifier').hidden=true;
   if(e.type==='pointercancel'){if(g?.before)state.project.restoreSnapshot(g.before);refreshUI();return;}
   if(action==='pan'&&g?.screen){
     const delta=Math.hypot(e.clientX-g.screen.x,e.clientY-g.screen.y),now=Date.now();
     if(delta<12&&state.lastNavigationTap&&now-state.lastNavigationTap.time<330&&Math.hypot(e.clientX-state.lastNavigationTap.x,e.clientY-state.lastNavigationTap.y)<35){fitImage();state.lastNavigationTap=null;}
     else state.lastNavigationTap=delta<12?{x:e.clientX,y:e.clientY,time:now}:null;
   }else state.lastNavigationTap=null;
-  if(action==='draw')finishDraw(r);
+  if(action==='draw'){
+    if(g?.dragged)finishDraw(r);
+    else if(g?.template)finishDraw(r,g.template);
+    else toast('Drag to draw, or select a crop to tap-place its size.',2400);
+  }
   if(['move','handle'].includes(action))change();else refreshUI();
 }
 function showMagnifier(screen,imagePt){if(!settings.magnifier||!state.image)return;
@@ -821,6 +909,7 @@ window.GuiCutterHandleBack=()=>{
 };
 
 function bind(){
+  for(const b of document.querySelectorAll('#controls .float button[title]'))b.dataset.tip=b.title;
   createNumericControls();saveSettings();bindNavigationGestures();syncShelfHandles();sizeCanvas();window.addEventListener('resize',sizeCanvas);
   const themeMedia=window.matchMedia('(prefers-color-scheme:dark)');
   const followSystemTheme=()=>{if(settings.theme==='system'){applyAppearance();scheduleDraw();}};
@@ -828,12 +917,12 @@ function bind(){
   const c=$('editor');c.addEventListener('pointerdown',handlePointerDown);c.addEventListener('pointermove',handlePointerMove);c.addEventListener('pointerup',handlePointerEnd);c.addEventListener('pointercancel',handlePointerEnd);
   c.addEventListener('contextmenu',e=>e.preventDefault());
   c.addEventListener('wheel',e=>{if(!state.image)return;e.preventDefault();state.view.zoomTo(state.view.scale*(e.deltaY<0?1.25:.8),e.clientX,e.clientY);setZoomLabel();scheduleDraw();},{passive:false});
-  for(const el of document.querySelectorAll('[data-mode]'))el.addEventListener('click',()=>{if(el.dataset.mode==='new'){settings.newKind='normal';saveSettings();}chooseMode(el.dataset.mode);});
+  for(const el of document.querySelectorAll('[data-mode]'))el.addEventListener('click',()=>{if(el.dataset.mode==='new'){settings.newKind='normal';saveSettings();}chooseMode(el.dataset.mode);toast(el.dataset.mode==='navigate'?'Pan · drag to move the image':el.dataset.mode==='edit'?'Edit · select or adjust a crop':state.project.active?'New · tap to copy selected size, drag for custom':'New · drag to set crop size',2100);});
   for(const el of document.querySelectorAll('[data-tab]'))el.addEventListener('click',()=>openTab(el.dataset.tab));
   for(const el of document.querySelectorAll('[data-setting]'))el.addEventListener('change',()=>{settings[el.dataset.setting]=el.checked;saveSettings();if(el.dataset.setting==='showEdges'&&settings.showEdges)buildOverlay();});
   $('setting-kind').addEventListener('change',e=>{settings.newKind=e.target.value;saveSettings();});
   $('explode-preview').addEventListener('change',e=>{settings.explodeNine=e.target.checked;saveSettings();renderPreview();});
-  $('new-kind').addEventListener('click',()=>{settings.newKind='nine_slice';saveSettings();chooseMode('new');});
+  $('new-kind').addEventListener('click',()=>{settings.newKind='nine_slice';saveSettings();chooseMode('new');toast(state.project.active?'Nine-slice · tap to copy selected or drag to draw':'Nine-slice · drag to draw',2100);});
   $('setting-theme').addEventListener('change',e=>{settings.theme=e.target.value;saveSettings();if(native)nativeCall('setUiTheme',settings.theme);});
   for(const btn of document.querySelectorAll('[data-gizmo-tint]'))btn.addEventListener('click',()=>{
     settings.gizmoTint=btn.dataset.gizmoTint;saveSettings();
@@ -851,16 +940,17 @@ function bind(){
   $('assets-btn').addEventListener('click',()=>openTab('assets'));$('properties-btn').addEventListener('click',()=>openTab('properties'));
   $('selection-info').addEventListener('click',()=>openTab('properties'));
 
-  $('quick-nudge').addEventListener('click',()=>{$('nudge-panel').hidden=!$('nudge-panel').hidden;});
+  $('quick-nudge').addEventListener('click',()=>{$('nudge-panel').hidden=!$('nudge-panel').hidden;toast('Pixel precision',1300);});
   $('close-nudge').addEventListener('click',()=>{$('nudge-panel').hidden=true;});
   $('nudge-unit').addEventListener('click',()=>{state.nudge=state.nudge===1?10:1;$('nudge-unit').textContent=`${state.nudge} px`;});
   for(const el of document.querySelectorAll('[data-nudge]'))el.addEventListener('click',()=>{const [dx,dy]=el.dataset.nudge.split(',').map(Number);applyNudge(dx,dy);});
   $('close-drawer').addEventListener('click',closeTab);$('close-app-drawer').addEventListener('click',closeTab);$('shade').addEventListener('click',closeTab);
   $('zoom-range').addEventListener('input',e=>zoomFromSlider(e.target.value));
-  $('zoom-label').addEventListener('click',fitImage);$('fit').addEventListener('click',fitImage);
-  $('snap').addEventListener('click',()=>{settings.edgeSnap=!settings.edgeSnap;saveSettings();toast(settings.edgeSnap?'Smart snap enabled':'Smart snap disabled');});
-  $('undo').addEventListener('click',()=>{if(state.project.undo()){refreshUI();scheduleDraft();}});
-  $('redo').addEventListener('click',()=>{if(state.project.redo()){refreshUI();scheduleDraft();}});
+  $('zoom-label').addEventListener('click',()=>{fitImage();toast('Image fitted to screen',1700);});$('fit').addEventListener('click',()=>{fitImage();toast('Image fitted to screen',1700);});
+  $('snap').addEventListener('click',()=>{settings.edgeSnap=!settings.edgeSnap;saveSettings();toast('Image edge snapping '+(settings.edgeSnap?'enabled':'disabled'));});
+  $('crop-snap').addEventListener('click',()=>{settings.cropSnap=!settings.cropSnap;state.alignGuides=[];saveSettings();toast('Crop alignment '+(settings.cropSnap?'enabled':'disabled'));});
+  $('undo').addEventListener('click',()=>{if(state.project.undo()){refreshUI();scheduleDraft();toast('Undone',1300);}});
+  $('redo').addEventListener('click',()=>{if(state.project.redo()){refreshUI();scheduleDraft();toast('Redone',1300);}});
   $('save').addEventListener('click',saveProject);
   $('new-from-list').addEventListener('click',()=>{closeTab();chooseMode('new');toast('Drag on the image to define a crop.');});
   $('rename').addEventListener('click',renameSelected);$('delete').addEventListener('click',deleteSelected);

@@ -582,3 +582,20 @@ body[data-open-drawer="sheet"] .app-drawer:not(.is-open) .side-grip {
 .storage-preference .hint {margin:0;color:var(--caption-ink);}
 .appearance-intro {margin:0 0 7px;}
 @media(max-width:370px) {.project-primary-actions button {font-size:11px;}.project-launch {padding:12px!important;}}
+
+/* v0.1.7 — two independent compact floating snap controls and desktop hints. */
+.bottom-bar .snap-button {min-width:37px!important;width:37px;max-width:37px;min-height:42px!important;height:42px;padding:7px!important;flex:0 0 37px;gap:0!important;}
+.bottom-bar .snap-button .ico {width:19px;height:19px;}
+.bottom-bar .snap-button.selected {background:var(--active);color:var(--active-ink);}
+.bottom-bar .snap-button:not(.selected) {color:var(--text-soft);}
+#controls .float button {position:relative;}
+@media (hover:hover) and (pointer:fine){
+  #controls .float button[data-tip]:hover::after{
+    content:attr(data-tip);position:absolute;z-index:30;left:50%;top:calc(100% + 10px);transform:translateX(-50%);
+    white-space:nowrap;pointer-events:none;color:var(--surface-ink);background:var(--surface-solid);
+    border:1px solid var(--panel-line);border-radius:9px;padding:7px 10px;font-size:11px;font-weight:500;box-shadow:var(--shadow);
+  }
+  #controls .tool-rail button[data-tip]:hover::after{top:50%;left:auto;right:calc(100% + 8px);transform:translateY(-50%);}
+  #controls .bottom-bar button[data-tip]:hover::after{top:auto;bottom:calc(100% + 8px);}
+}
+@media(max-width:390px){.bottom-bar .snap-button{min-width:34px!important;width:34px;max-width:34px;flex-basis:34px;padding:7px!important;}}
