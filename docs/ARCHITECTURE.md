@@ -2,6 +2,7 @@
 
 - **HTML/CSS + Canvas:** complete screen layout, full-canvas rendering, floating toolbars, left application drawer, bottom inspection sheet and previews.
 - **app.mjs:** one gesture controller, saved material/motion preferences, two isolated drawer states, UI event wiring, edge visualization and project operations.
+- **editor-performance.mjs:** bounded LRU thumbnail cache, viewport visibility test, and content-key invalidation for the asset list; independent of the DOM and covered by Node tests.
 - **model.mjs:** normalized asset schema, filename validation, 128-step undo/redo and dirty tracking.
 - **geometry.mjs:** inclusive screen transforms and exclusive image crop bounds, resize handles, move, directional snapping, nine-slice preview parts.
 - **edge-worker.js:** off-main-thread luminance-gradient edge detection. Image coordinates remain source pixels.
@@ -23,3 +24,6 @@ Native methods are exposed only to bundled first-party pages. No broad storage p
 - `glassTransparency` (0–65%), `glassBlur` (0–36 CSS px), theme (system/night/daylight), and `smoothMotion` are stored locally in `gui-cutter.preferences.v1`. The old `reduceGlass` preference is migrated on first load.
 - Panel transforms use opacity and GPU-friendly transforms; tool gestures and pixel geometry are always immediate, never animated. `prefers-reduced-motion` disables ornamental motion.
 - Native Back first asks the page to close any open dialog, drawer, precision nudge overlay or Clean Canvas mode, before exiting the Activity.
+## Rendering and lifecycle
+
+The asset library preserves its DOM and preview bitmaps when only selection changes. Geometry, image, or view-mode changes invalidate the list. Off-screen crop decoration is skipped, while a small margin preserves visible handles and glow. The magnifier coalesces pointer moves to one paint per animation frame. Image changes terminate obsolete edge workers, and temporary browser object URLs are released after loading. The source-image geometry and native export are unchanged.

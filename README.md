@@ -78,3 +78,7 @@ The asset library now pans and selectively zooms to a crop when it is tapped; al
 ## v0.1.8 corrections
 
 Deferred select-mode taps prevent two-finger gestures from changing selection; last selection is reused for tap placement, while the active crop tool determines type. Workspace flow clarifies name-first versus image-first project creation. Preferences supports a pencil-only project rename and settings explanations. Drawer overflow, project-list scroll, clean canvas, haptics, theme background and glass toast are corrected.
+
+## v0.1.9 — internal cleanup and interaction performance
+
+Selections now update the asset-list highlight without reconstructing all crop thumbnails. Crop decoration outside the visible canvas is skipped, thumbnail caching evicts only the oldest entries, and the magnifier paints at most once per animation frame. Loading another image stops obsolete edge detection work and releases temporary browser image URLs. Removed an unused Android-starter UI script. Geometry, gestures, project files, native export and Android identity retain their existing behavior. Unit tests cover list invalidation, viewport visibility and cache eviction.

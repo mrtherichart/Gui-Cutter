@@ -2,6 +2,7 @@ import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} fro
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
 import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt} from './drawer-motion.mjs';
+import {BoundedCache, assetListKey, intersectsViewport} from './editor-performance.mjs';
 
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
@@ -132,7 +133,7 @@ function focusAsset(asset){
 }
 function rememberTemplate(){if(state.project.active)state.lastTemplateAsset={...state.project.active};}
 function selectIndex(i){state.project.selected=i;rememberTemplate();refreshUI();focusAsset(state.project.active);}
-function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}state.mode=mode;state.previewRect=null;state.gesture=null;updateButtons();scheduleDraw();}
+function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.clear();hideMagnifier();}state.mode=mode;state.previewRect=null;state.gesture=null;updateButtons();scheduleDraw();}
 const applicationTabs=new Set(['files','settings','developer']);
 const panelMap={app:$('app-drawer'),sheet:$('drawer')};
 const closedReveal={app:16,sheet:20};
@@ -223,7 +224,7 @@ function moveDrawer(kind,to,start,velocity=0){
 }
 function showTab(tab){
   const app=applicationTabs.has(tab),kind=app?'app':'sheet';
-  if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}
+  if(state.gestureData){cancelSingle();state.pointers.clear();hideMagnifier();}
   setTabs(tab);
   // Populate content before it appears from the edge. Never redraw repeatedly during the pull.
   if(!panelMap[kind].classList.contains('is-open')){
@@ -416,6 +417,8 @@ function redraw(){
     if(settings.hideUnselected&&i!==state.project.selected)continue;
     const a=state.project.assets[i],selected=i===state.project.selected;
     const tl=v.toScreen(a.x,a.y),br=v.toScreen(a.x+a.w,a.y+a.h);
+    // Skip decoration well outside the display, preserving room for halos and labels.
+    if(!intersectsViewport(tl.x,tl.y,br.x,br.y,w,h,32))continue;
     ctx.save();ctx.setLineDash([]);
     if(selected){
       const tint=tintChoices[settings.gizmoTint],rect=[tl.x+.5,tl.y+.5,br.x-tl.x,br.y-tl.y];
@@ -485,9 +488,13 @@ function zoomFromSlider(value){
 let oldCanvasWidth=0,oldCanvasHeight=0;
 function sizeCanvas(){const c=$('editor'),dpr=Math.min(3,window.devicePixelRatio||1),w=Math.max(1,Math.round(c.clientWidth*dpr)),h=Math.max(1,Math.round(c.clientHeight*dpr));if(c.width!==w||c.height!==h){if(state.image&&oldCanvasWidth){state.view.pan((c.clientWidth-oldCanvasWidth)/2,(c.clientHeight-oldCanvasHeight)/2);}oldCanvasWidth=c.clientWidth;oldCanvasHeight=c.clientHeight;c.width=w;c.height=h;state.canvasDpr=dpr;scheduleDraw();}}
 
+let edgeWorker=null;
+function stopEdgeWorker(){if(edgeWorker){edgeWorker.terminate();edgeWorker=null;}}
+function releaseImageUrl(src){if(typeof src==='string'&&src.startsWith('blob:'))URL.revokeObjectURL(src);}
 async function openImageElement(src,loadManifest=true){
-  const seq=++state.imageSeq;const image=new Image();
+  const seq=++state.imageSeq;stopEdgeWorker();const image=new Image();
   image.onload=async()=>{
+    releaseImageUrl(src);
     if(seq!==state.imageSeq)return;
     state.image=image;state.imageLoaded=true;
     state.project.imageWidth=image.naturalWidth;state.project.imageHeight=image.naturalHeight;
@@ -497,7 +504,7 @@ async function openImageElement(src,loadManifest=true){
     else state.project.reset([]);
     fitImage();refreshUI();processEdges(image,seq);await recoverDraft();toast(`Image loaded: ${image.naturalWidth} × ${image.naturalHeight}`);
   };
-  image.onerror=()=>{if(seq===state.imageSeq){state.image=null;state.imageLoaded=false;$('empty').hidden=false;errorMessage('Could not open base image.');}};
+  image.onerror=()=>{releaseImageUrl(src);if(seq===state.imageSeq){state.image=null;state.imageLoaded=false;$('empty').hidden=false;errorMessage('Could not open base image.');}};
   image.src=src;
 }
 async function recoverDraft(){
@@ -515,10 +522,11 @@ async function processEdges(image,seq){
   if(iw*ih>13000000){log('Edge detection skipped (image over 13MP)');toast('Large image: automatic edge detection disabled.');return;}
   try{const temp=document.createElement('canvas');temp.width=iw;temp.height=ih;const cx=temp.getContext('2d',{willReadFrequently:true});cx.drawImage(image,0,0);
     const data=cx.getImageData(0,0,iw,ih),worker=new Worker(new URL('./edge-worker.js',import.meta.url));
-    worker.onmessage=evt=>{worker.terminate();if(seq!==state.imageSeq)return;
+    edgeWorker=worker;
+    worker.onmessage=evt=>{if(edgeWorker!==worker)return;stopEdgeWorker();if(seq!==state.imageSeq)return;
       if(evt.data.error){errorMessage(evt.data.error);return;}
       state.edges=new Uint8Array(evt.data.edges);state.overlay=null;if(settings.showEdges)buildOverlay();scheduleDraw();log('Edge map ready',`${iw}x${ih}`);};
-    worker.onerror=e=>{worker.terminate();log('Edge worker failed',e.message);};
+    worker.onerror=e=>{if(edgeWorker!==worker)return;stopEdgeWorker();log('Edge worker failed',e.message);};
     worker.postMessage({rgba:data.data.buffer,width:iw,height:ih},[data.data.buffer]);
   }catch(e){log('Edge detection unavailable',e.message);}
 }
@@ -527,7 +535,9 @@ function buildOverlay(){if(!state.edges||!state.image)return;const {iw,ih}=appCt
   catch(e){settings.showEdges=false;saveSettings();errorMessage(e);}
 }
 // Thumbnail cache contains small canvases, never full-size source copies.
-const assetThumbnails=new Map();
+const assetThumbnails=new BoundedCache(120);
+let lastAssetListKey=null;
+let lastAssetSelection=-1;
 function cropThumbnail(asset){
   const key=[state.imageSeq,asset.x,asset.y,asset.w,asset.h].join(':');
   if(assetThumbnails.has(key))return assetThumbnails.get(key);
@@ -538,13 +548,23 @@ function cropThumbnail(asset){
     const w=asset.w*scale,h=asset.h*scale;
     c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(96-w)/2,(72-h)/2,w,h);
   }
-  if(assetThumbnails.size>=120)assetThumbnails.clear();
   assetThumbnails.set(key,canvas);
   return canvas;
 }
 function renderList(){
   if(!bottomTabVisible('assets'))return;
-  const panel=$('asset-list'),oldScroll=panel.parentElement.scrollTop;
+  const panel=$('asset-list');
+  const contentKey=assetListKey(state.project.assets,state.imageSeq,settings.assetView);
+  if(contentKey===lastAssetListKey){
+    // Selecting a crop changes two classes, not the entire list of previews.
+    if(lastAssetSelection!==state.project.selected){
+      panel.children[lastAssetSelection]?.classList.remove('active');
+      panel.children[state.project.selected]?.classList.add('active');
+      lastAssetSelection=state.project.selected;
+    }
+    return;
+  }
+  const oldScroll=panel.parentElement.scrollTop;
   const grid=settings.assetView==='grid';
   panel.classList.toggle('view-grid',grid);
   panel.classList.toggle('view-list',!grid);
@@ -570,6 +590,7 @@ function renderList(){
   }
   if(!state.project.assets.length){const el=document.createElement('p');el.textContent='No crops yet. Choose New to draw your first asset.';el.className='minor';fragment.append(el);}
   panel.replaceChildren(fragment);panel.parentElement.scrollTop=oldScroll;
+  lastAssetListKey=contentKey;lastAssetSelection=state.project.selected;
 }
 const labels={x:'X',y:'Y',w:'Width',h:'Height',left:'9-slice left',top:'9-slice top',right:'9-slice right',bottom:'9-slice bottom'};
 function createNumericControls(){for(const key of Object.keys(labels)){const outer=document.createElement('div');outer.className='numeric-item';outer.dataset.key=key;
@@ -710,7 +731,7 @@ async function finishDraw(r,template=null){state.previewRect=null;if(!r||r.w<2||
     state.project.insert(normalizeAsset(asset,iw,ih));rememberTemplate();tactile();refreshUI();scheduleDraft();chooseMode('edit');toast(`Created ${id}`);}catch(e){errorMessage(e);}}
 function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preventDefault();state.pointers.delete(e.pointerId);
   if(state.gesture==='pinch'){if(!state.pointers.size){state.gesture=null;state.gestureData=null;}state.lastNavigationTap=null;scheduleDraw();return;}
-  const action=state.gesture,r=state.previewRect,g=state.gestureData;state.gesture=null;state.gestureData=null;state.previewRect=null;state.snapPoint=null;state.alignGuides=[];state.snapMemory='';$('magnifier').hidden=true;
+  const action=state.gesture,r=state.previewRect,g=state.gestureData;state.gesture=null;state.gestureData=null;state.previewRect=null;state.snapPoint=null;state.alignGuides=[];state.snapMemory='';hideMagnifier();
   if(e.type==='pointercancel'){if(g?.before)state.project.restoreSnapshot(g.before);refreshUI();return;}
   if(action==='pan'&&g?.screen){
     const delta=Math.hypot(e.clientX-g.screen.x,e.clientY-g.screen.y),now=Date.now();
@@ -726,7 +747,23 @@ function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preven
   if(action==='pending-deselect')state.project.selected=-1;
   if(['move','handle'].includes(action)){rememberTemplate();change();}else refreshUI();
 }
-function showMagnifier(screen,imagePt){if(!settings.magnifier||!state.image)return;
+let magnifierFrame=0;
+let magnifierRequest=null;
+function hideMagnifier(){
+  if(magnifierFrame)cancelAnimationFrame(magnifierFrame);
+  magnifierFrame=0;magnifierRequest=null;$('magnifier').hidden=true;
+}
+function showMagnifier(screen,imagePt){
+  if(!settings.magnifier||!state.image)return;
+  magnifierRequest={screen,imagePt};
+  if(magnifierFrame)return;
+  magnifierFrame=requestAnimationFrame(()=>{
+    magnifierFrame=0;
+    const latest=magnifierRequest;magnifierRequest=null;
+    if(latest)paintMagnifier(latest.screen,latest.imagePt);
+  });
+}
+function paintMagnifier(screen,imagePt){
   const box=$('magnifier'),canvas=$('magnify-canvas'),c=canvas.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,140,140);
   const {iw,ih}=appCtx(),x=limit(Math.round(imagePt.x),0,iw),y=limit(Math.round(imagePt.y),0,ih);
   const sx=Math.max(0,x-14),sy=Math.max(0,y-14),sw=Math.min(28,iw-sx),sh=Math.min(28,ih-sy);
