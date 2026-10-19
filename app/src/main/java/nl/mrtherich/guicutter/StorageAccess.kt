@@ -85,6 +85,19 @@ class StorageAccess(private val context: Context) {
         setActiveProject(dir)
         return candidate
     }
+    fun renameProject(rawName:String):String {
+        val root=workspace()
+        val old=prefs.getString("activeProjectName",null)
+            ?: error("Legacy work-root projects cannot be renamed here")
+        val name=safeName(rawName)
+        if(name==old)return name
+        check(root.findFile(name)==null) { "A project with that name already exists" }
+        val folder=root.findFile(old) ?: error("Project folder missing")
+        check(folder.isDirectory && folder.renameTo(name)) { "Unable to rename project folder" }
+        val renamed=root.findFile(name) ?: error("Renamed project folder cannot be reopened")
+        setActiveProject(renamed)
+        return name
+    }
     fun openProject(id:String):String {
         val root=workspace()
         if(id=="@legacy"){

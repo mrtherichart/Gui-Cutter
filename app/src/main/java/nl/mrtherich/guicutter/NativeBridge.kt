@@ -10,6 +10,7 @@ class NativeBridge(private val activity: MainActivity) {
     @JavascriptInterface fun chooseFolder() = activity.runOnUiThread { activity.chooseFolder() }
     @JavascriptInterface fun createProject(name:String) = activity.createProject(name)
     @JavascriptInterface fun openProject(id:String) = activity.openProject(id)
+    @JavascriptInterface fun renameProject(name:String) = activity.renameProject(name)
     @JavascriptInterface fun listProjects() = activity.listProjects()
     @JavascriptInterface fun newFromImage() = activity.runOnUiThread { activity.newFromImage() }
     @JavascriptInterface fun exportProjectZip() = activity.runOnUiThread { activity.exportProjectZip() }

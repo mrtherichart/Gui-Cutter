@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
         barThemeMode = if (mode in listOf("system", "light", "dark")) mode else "system"
         val dark = if (barThemeMode == "system") systemDark() else barThemeMode == "dark"
         val color = Color.parseColor(if (dark) "#121C2A" else "#EEF3F7")
+        if(::webView.isInitialized)webView.setBackgroundColor(color)
         window.statusBarColor = color
         window.navigationBarColor = color
         if (android.os.Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
@@ -147,7 +148,10 @@ class MainActivity : ComponentActivity() {
             }).build()
 
         WindowCompat.setDecorFitsSystemWindows(window,false)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(
+            Color.parseColor(if(systemDark()) "#121C2A" else "#EEF3F7")))
         webView=WebView(this).apply {
+            setBackgroundColor(Color.parseColor(if(systemDark()) "#121C2A" else "#EEF3F7"))
             settings.javaScriptEnabled=true
             settings.domStorageEnabled=true
             settings.allowFileAccess=false
@@ -239,6 +243,19 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    fun renameProject(name:String) {
+        io.execute {
+            try {
+                val renamed=storage.renameProject(name)
+                sendEvent("project",JSONObject().put("ok",true).put("name",renamed).put("renamed",true))
+                sendEvent("status",statusPayload())
+                listProjects()
+            }catch(e:Exception){
+                DevLog.write("RENAME",e.stackTraceToString())
+                sendEvent("project",JSONObject().put("ok",false).put("message",e.message))
+            }
+        }
+    }
     fun openProject(id:String) {
         io.execute {
             try{
@@ -287,7 +304,7 @@ class MainActivity : ComponentActivity() {
         try {
             val vib=getSystemService(VIBRATOR_SERVICE) as? android.os.Vibrator ?: return
             if (android.os.Build.VERSION.SDK_INT>=26 && vib.hasVibrator())
-                vib.vibrate(android.os.VibrationEffect.createOneShot(12,android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+                vib.vibrate(android.os.VibrationEffect.createOneShot(6,18))
         }catch(e:Exception){DevLog.write("HAPTIC",e.message?:"Unavailable")}
     }
     fun exportLog()=logExporter.launch("Gui-Cutter-devlog.txt")

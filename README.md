@@ -74,3 +74,7 @@ New normal or nine-slice crops: tapping the image stamps a crop using the select
 Two independent icon-only bottom-bar toggles control source-image edge snapping and crop-to-crop alignment. Crop snapping uses screen-pixel tolerance and aligns independent horizontal/vertical edges or centers, showing only faint temporary grey dashed lines when an alignment is active. Snap toggles, tools, Fit, Undo/Redo and precision controls give brief contextual feedback. Desktop hover shows icon hints without permanent labels.
 
 The asset library now pans and selectively zooms to a crop when it is tapped; already visible assets do not cause movement. Optional haptics are provided through the Android vibration service (with browser fallback) when a snap engages or a new crop is completed. Existing project structure, save status dot, project/ZIP management and drawer gestures remain unchanged.
+
+## v0.1.8 corrections
+
+Deferred select-mode taps prevent two-finger gestures from changing selection; last selection is reused for tap placement, while the active crop tool determines type. Workspace flow clarifies name-first versus image-first project creation. Preferences supports a pencil-only project rename and settings explanations. Drawer overflow, project-list scroll, clean canvas, haptics, theme background and glass toast are corrected.

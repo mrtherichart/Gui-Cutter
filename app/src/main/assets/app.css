@@ -599,3 +599,21 @@ body[data-open-drawer="sheet"] .app-drawer:not(.is-open) .side-grip {
   #controls .bottom-bar button[data-tip]:hover::after{top:auto;bottom:calc(100% + 8px);}
 }
 @media(max-width:390px){.bottom-bar .snap-button{min-width:34px!important;width:34px;max-width:34px;flex-basis:34px;padding:7px!important;}}
+
+/* v0.1.8 stability corrections */
+html,body {position:fixed;inset:0;width:100%;height:100%;max-width:100%;max-height:100%;overflow:hidden!important;overscroll-behavior:none!important;}
+.workspace {position:fixed;inset:0;overflow:hidden!important;overscroll-behavior:none;}
+.app-drawer,.bottom-drawer{max-height:100%;contain:layout paint;overscroll-behavior:contain;}
+.app-content,.sheet-content{height:0;min-height:0;flex:1 1 auto;overflow:hidden;}
+.app-content>.tab-pane:not([hidden]),.sheet-content>.tab-pane:not([hidden]){display:block;min-height:0;max-height:100%;flex:1 1 auto;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;}
+.folder-picker-button{border-radius:13px!important;}
+.settings-project-row{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:70px;}
+.settings-project-row .storage-current{min-width:0;flex:1;}
+.rename-icon{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;border-radius:13px;border:1px solid var(--panel-line);background:rgba(var(--glass-rgb),.15);}
+.rename-icon .ico{width:18px;height:18px;}
+.field-hint{display:block;font-size:11px;color:var(--caption-ink);font-weight:400;}
+.status{color:var(--surface-ink);background:rgba(var(--glass-rgb),var(--glass-alpha));border:1px solid var(--glass-border);-webkit-backdrop-filter:blur(var(--glass-blur)) saturate(140%);backdrop-filter:blur(var(--glass-blur)) saturate(140%);box-shadow:var(--shadow),inset 0 1px 0 var(--glass-highlight);}
+.clean .drawer,.clean .shade,.clean .side-grip,.clean .sheet-grip,.clean .drawer-edge{visibility:hidden!important;opacity:0!important;pointer-events:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}
+.clean #magnifier,.clean .nudge-panel{display:none!important;}
+#inspect-files.plain-refresh{border-radius:50%;flex:0 0 35px;}
+.project-primary-actions button{white-space:normal;line-height:1.25;}

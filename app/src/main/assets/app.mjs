@@ -24,7 +24,7 @@ const tintChoices={
   jade:{halo:'94,218,176',mid:'#a4f2d9',core:'#fafffc'}
 };
 if(!tintChoices[settings.gizmoTint])settings.gizmoTint='champagne';
-const state={project:new Project(),view:new Viewport(),image:null,edges:null,overlay:null,mode:'edit',pointers:new Map(),gesture:null,gestureData:null,previewRect:null,snapPoint:null,busy:false,tab:'assets',projectKey:'browser',nativeInfo:null,toastTimer:0,draftTimer:0,imageSeq:0,nudge:1,canvasDpr:1,lastStatus:'Ready',imageLoaded:false,pendingSave:null,lastNavigationTap:null};
+const state={project:new Project(),view:new Viewport(),image:null,edges:null,overlay:null,mode:'edit',pointers:new Map(),gesture:null,gestureData:null,previewRect:null,snapPoint:null,busy:false,tab:'assets',projectKey:'browser',nativeInfo:null,toastTimer:0,draftTimer:0,imageSeq:0,nudge:1,canvasDpr:1,lastStatus:'Ready',imageLoaded:false,pendingSave:null,lastNavigationTap:null,lastTemplateAsset:null};
 state.alignGuides=[];state.snapMemory='';state.lastSnapAt=0;state.focusEpoch=0;
 const ctx=$('editor').getContext('2d');
 const appCtx=()=>({iw:state.image?.naturalWidth||0,ih:state.image?.naturalHeight||0});
@@ -130,7 +130,8 @@ function focusAsset(asset){
   }
   requestAnimationFrame(animate);
 }
-function selectIndex(i){state.project.selected=i;refreshUI();focusAsset(state.project.active);}
+function rememberTemplate(){if(state.project.active)state.lastTemplateAsset={...state.project.active};}
+function selectIndex(i){state.project.selected=i;rememberTemplate();refreshUI();focusAsset(state.project.active);}
 function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}state.mode=mode;state.previewRect=null;state.gesture=null;updateButtons();scheduleDraw();}
 const applicationTabs=new Set(['files','settings','developer']);
 const panelMap={app:$('app-drawer'),sheet:$('drawer')};
@@ -254,7 +255,7 @@ function closeTab(){
   if(!kind)return;
   moveDrawer(kind,0,dragDistance[kind]??1);
 }
-function cleanCanvas(yes){document.body.classList.toggle('clean',yes);$('clean-restore').hidden=!yes;closeTab();}
+function cleanCanvas(yes){if(yes){stopDrawerAnimation();drawerMotion.active=null;closeTab();}document.body.classList.toggle('clean',yes);$('clean-restore').hidden=!yes;}
 
 function forbiddenGestureTarget(el,kind){
   // Let sliders, editable fields, toggles and ordinary action buttons own their touches.
@@ -490,7 +491,7 @@ async function openImageElement(src,loadManifest=true){
     if(seq!==state.imageSeq)return;
     state.image=image;state.imageLoaded=true;
     state.project.imageWidth=image.naturalWidth;state.project.imageHeight=image.naturalHeight;
-    state.edges=null;state.overlay=null;assetThumbnails.clear();$('empty').hidden=true;
+    state.edges=null;state.overlay=null;state.lastTemplateAsset=null;assetThumbnails.clear();$('empty').hidden=true;
     if(loadManifest&&native){try{const json=native.readManifest();state.project.load(json?JSON.parse(json):{assets:[]});}
       catch(e){state.project.reset([]);errorMessage('Could not load manifest: '+e.message);}}
     else state.project.reset([]);
@@ -605,13 +606,13 @@ function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('
 
 function tactile(){
   if(!settings.haptics)return;
-  try{if(native&&typeof native.hapticTick==='function')native.hapticTick();else navigator.vibrate?.(12);}catch{}
+  try{if(native&&typeof native.hapticTick==='function')native.hapticTick();else navigator.vibrate?.(5);}catch{}
 }
 function announceSnap(signature){
   if(!signature){state.snapMemory='';return;}
   if(signature!==state.snapMemory){
     state.snapMemory=signature;
-    if(performance.now()-state.lastSnapAt>140){state.lastSnapAt=performance.now();tactile();}
+    if(performance.now()-state.lastSnapAt>420){state.lastSnapAt=performance.now();tactile();}
   }
 }
 function applyCropAlignment(rect,mode,handle=null,exclude=-1){
@@ -639,16 +640,16 @@ function paintAlignmentGuides(view){
   }ctx.restore();
 }
 function cancelSingle(){state.alignGuides=[];state.snapMemory='';const g=state.gestureData;if(g?.before)state.project.restoreSnapshot(g.before);state.previewRect=null;state.snapPoint=null;state.gesture=null;state.gestureData=null;refreshUI();}
-function startPinch(){cancelSingle();const pts=[...state.pointers.values()].slice(0,2),a=pts[0],b=pts[1],mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+function startPinch(){const prior=state.gestureData?.selectedBefore;cancelSingle();if(prior!==undefined)state.project.selected=prior;const pts=[...state.pointers.values()].slice(0,2),a=pts[0],b=pts[1],mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
   state.gesture='pinch';state.gestureData={distance:Math.hypot(a.x-b.x,a.y-b.y)||1,scale:state.view.scale,anchor:state.view.toImage(mx,my)};
 }
 function startSingle(p){if(!state.image||state.busy)return;const {iw,ih}=appCtx(),v=state.view,pt=v.toImage(p.x,p.y);
   const base={x:Math.round(limit(pt.x,0,iw)),y:Math.round(limit(pt.y,0,ih))};
-  state.gestureData={screen:{x:p.x,y:p.y},anchor:base,before:state.project.snapshot(),start:null,index:state.project.selected};
+  state.gestureData={screen:{x:p.x,y:p.y},anchor:base,before:state.project.snapshot(),selectedBefore:state.project.selected,start:null,index:state.project.selected};
   if(state.mode==='navigate'){state.gesture='pan';return;}
   if(state.mode==='new'){
     state.gesture='draw';
-    const g=state.gestureData;g.template=state.project.active?{...state.project.active}:null;g.dragged=false;
+    const g=state.gestureData;g.template=state.project.active?{...state.project.active}:(state.lastTemplateAsset?{...state.lastTemplateAsset}:null);g.dragged=false;
     const r=g.template?placeTemplate(g.template,base.x,base.y,iw,ih):null;
     state.previewRect=r?applyCropAlignment(r,'move'):{x:limit(base.x,0,iw-1),y:limit(base.y,0,ih-1),w:1,h:1};
     scheduleDraw();return;
@@ -656,8 +657,8 @@ function startSingle(p){if(!state.image||state.busy)return;const {iw,ih}=appCtx(
   const active=state.project.active;const handle=hitHandle(active,v,p.x,p.y);
   if(handle){state.gesture=handle==='move'?'move':'handle';state.gestureData.handle=handle;state.gestureData.start={...active};return;}
   const index=hitBorder(state.project.assets,v,p.x,p.y);
-  if(index>=0){state.project.selected=index;state.gesture='move';state.gestureData.index=index;state.gestureData.start={...state.project.assets[index]};refreshUI();return;}
-  state.project.selected=-1;state.gesture='idle';refreshUI();
+  if(index>=0){state.gesture='pending-select';state.gestureData.index=index;state.gestureData.start={...state.project.assets[index]};return;}
+  state.gesture='pending-deselect';
 }
 function screenSnap(x,y,handle){const {iw,ih}=appCtx(),p=state.view.toImage(x,y);
   let target={x:Math.round(limit(p.x,0,iw)),y:Math.round(limit(p.y,0,ih)),found:false};
@@ -678,6 +679,11 @@ function handlePointerMove(e){if(!state.pointers.has(e.pointerId))return;e.preve
   if(state.gesture==='pinch'||!state.gestureData)return;
   if(state.gesture==='pan'){state.view.pan(p.x-previous.x,p.y-previous.y);scheduleDraw();return;}
   const g=state.gestureData,{iw,ih}=appCtx();
+  if(state.gesture==='pending-select'){
+    if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)<9)return;
+    state.project.selected=g.index;rememberTemplate();state.gesture='move';updateButtons();scheduleDraw();
+  }
+  if(state.gesture==='pending-deselect')return;
   if(state.gesture==='draw'){
     if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)>=10)g.dragged=true;
     if(g.dragged){
@@ -699,9 +705,9 @@ function handlePointerMove(e){if(!state.pointers.has(e.pointerId))return;e.preve
 }
 async function finishDraw(r,template=null){state.previewRect=null;if(!r||r.w<2||r.h<2)return;
   const id=await createModal({title:'New crop',initial:`asset_${String(state.project.assets.length+1).padStart(2,'0')}`,message:'Give this UI element a unique name.'});
-  if(!id)return;try{const {iw,ih}=appCtx();const asset=makeAsset(id,template?.kind||settings.newKind,r.x,r.y,r.w,r.h,iw,ih);
-    if(template?.kind==='nine_slice')for(const side of ['left','right','top','bottom'])asset[side]=template[side];
-    state.project.insert(normalizeAsset(asset,iw,ih));tactile();refreshUI();scheduleDraft();chooseMode('edit');toast(`Created ${id}`);}catch(e){errorMessage(e);}}
+  if(!id)return;try{const {iw,ih}=appCtx();const asset=makeAsset(id,settings.newKind,r.x,r.y,r.w,r.h,iw,ih);
+    if(template?.kind==='nine_slice'&&settings.newKind==='nine_slice')for(const side of ['left','right','top','bottom'])asset[side]=template[side];
+    state.project.insert(normalizeAsset(asset,iw,ih));rememberTemplate();tactile();refreshUI();scheduleDraft();chooseMode('edit');toast(`Created ${id}`);}catch(e){errorMessage(e);}}
 function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preventDefault();state.pointers.delete(e.pointerId);
   if(state.gesture==='pinch'){if(!state.pointers.size){state.gesture=null;state.gestureData=null;}state.lastNavigationTap=null;scheduleDraw();return;}
   const action=state.gesture,r=state.previewRect,g=state.gestureData;state.gesture=null;state.gestureData=null;state.previewRect=null;state.snapPoint=null;state.alignGuides=[];state.snapMemory='';$('magnifier').hidden=true;
@@ -716,7 +722,9 @@ function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preven
     else if(g?.template)finishDraw(r,g.template);
     else toast('Drag to draw, or select a crop to tap-place its size.',2400);
   }
-  if(['move','handle'].includes(action))change();else refreshUI();
+  if(action==='pending-select'){state.project.selected=g.index;rememberTemplate();}
+  if(action==='pending-deselect')state.project.selected=-1;
+  if(['move','handle'].includes(action)){rememberTemplate();change();}else refreshUI();
 }
 function showMagnifier(screen,imagePt){if(!settings.magnifier||!state.image)return;
   const box=$('magnifier'),canvas=$('magnify-canvas'),c=canvas.getContext('2d');c.imageSmoothingEnabled=false;c.clearRect(0,0,140,140);
@@ -733,8 +741,11 @@ function refreshStatus(){if(!native){$('app-version').textContent='Browser test'
   try{const info=JSON.parse(native.appStatus());state.nativeInfo=info;state.projectKey=info.projectKey||'android';applyAppearance();
     $('app-version').textContent=`v${info.version} (${info.versionCode})`;$('app-folder').textContent=info.workFolder||'Not configured';
     $('folder-name').textContent=info.projectName||'No project open';
+    $('settings-project-name').textContent=info.projectName||'No project open';
+    $('rename-project').disabled=!info.hasProject||info.projectId==='@legacy';
     $('work-folder-name').textContent=info.workFolder||'Not configured';
     $('project-location').textContent=info.hasProject?`In ${info.workFolder}`:'Choose New project or From image';
+    $('open-image').hidden=!info.hasProject||!!info.hasBase;
     $('open-image').disabled=!info.hasProject||!!info.hasBase;
     $('reload-project').disabled=!info.hasProject;
     $('bundle-project').disabled=!info.hasBase;
@@ -748,7 +759,7 @@ function inspectFiles(){const box=$('file-list');box.replaceChildren();if(!nativ
 function reloadProject(){if(state.project.dirty){createModal({title:'Discard unsaved changes?',message:'This replaces the current canvas with the files already saved on disk.',question:true}).then(yes=>{if(yes){clearDraft();loadNativeProject();}});}
   else loadNativeProject();}
 function loadNativeProject(){refreshStatus();if(!native){$('browser-manifest').click();return;}
-  if(!state.nativeInfo?.hasBase){state.image=null;state.imageLoaded=false;$('empty').hidden=false;state.project.reset([]);refreshUI();return;}
+  if(!state.nativeInfo?.hasBase){state.image=null;state.imageLoaded=false;state.lastTemplateAsset=null;$('empty').hidden=false;state.project.reset([]);refreshUI();return;}
   const stamp=state.nativeInfo.imageStamp||Date.now();openImageElement(`https://appassets.androidplatform.net/project/base.png?v=${encodeURIComponent(stamp)}`);}
 // Native projects share a single persistent Android work folder.
 function refreshProjectLibrary(){
@@ -792,16 +803,24 @@ async function switchProject(id){
   clearDraft();
   nativeCall('openProject',id);
 }
+async function renameCurrentProject(){
+  if(!native||!state.nativeInfo?.hasProject)return;
+  if(state.nativeInfo?.projectId==='@legacy'){toast('Rename legacy projects using the file manager.');return;}
+  if(state.project.dirty){toast('Save your changes before renaming.');return;}
+  const name=await createModal({title:'Rename project',initial:state.nativeInfo.projectName||'Project',
+    message:'The project folder will be renamed without altering its contents.'});
+  if(name&&name.trim()!==state.nativeInfo.projectName)nativeCall('renameProject',name.trim());
+}
 async function createNewProject(){
   if(native&&!state.nativeInfo?.hasWorkspace){
     toast('First choose a work folder in Preferences.');openTab('settings');return;
   }
   if(!await confirmLeave())return;
   const name=await createModal({title:'New project',initial:'Untitled project',
-    message:'Create a project folder, then choose its image.'});
+    message:'Create a named project. Add a source image when you are ready.'});
   if(!name)return;
   if(native){
-    state.importAfterCreation=true;
+    state.importAfterCreation=false;
     nativeCall('createProject',name);
   }else{
     state.browserProjectName=name;
@@ -819,7 +838,7 @@ async function newFromImage(){
 function showProjectLibrary(){
   if(!native){toast('Project list is available in the Android app.');return;}
   refreshProjectLibrary();
-  $('project-library-heading').scrollIntoView({behavior:'smooth',block:'start'});
+  const pane=$('tab-files'),heading=$('project-library-heading');pane.scrollTo({top:heading.offsetTop-pane.offsetTop-12,behavior:'smooth'});
 }
 async function chooseFolder(){
   if(!await confirmLeave())return;
@@ -829,7 +848,7 @@ async function chooseFolder(){
 function importImage(){
   if(native){
     if(!state.nativeInfo?.hasProject){newFromImage();return;}
-    if(state.nativeInfo.hasBase){toast('Use “From image” to start a new project.');return;}
+    if(state.nativeInfo.hasBase){toast('Use “New from image” to start another project.');return;}
     nativeCall('selectImage');
   }else $('browser-image').click();
 }
@@ -873,9 +892,8 @@ window.GuiCutterReceive=(type,data={})=>{
     if(type==='project'){
       if(!data.ok){state.importAfterCreation=false;toast(data.message||'Cannot open project');return;}
       refreshStatus();loadNativeProject();refreshProjectLibrary();
-      if(data.created&&state.importAfterCreation){
-        state.importAfterCreation=false;nativeCall('selectImage');
-      }else{closeTab();toast('Opened '+data.name);}
+      if(data.renamed){toast('Project renamed to '+data.name);refreshStatus();refreshProjectLibrary();}
+      else{closeTab();toast((data.created?'Created ':'Opened ')+data.name);}
       return;
     }
     if(type==='image'){
@@ -957,6 +975,7 @@ function bind(){
   $('apply-props').addEventListener('click',applyProps);
   $('choose-folder').addEventListener('click',chooseFolder);
   $('create-project').addEventListener('click',createNewProject);
+  $('rename-project').addEventListener('click',renameCurrentProject);
   $('new-from-image').addEventListener('click',newFromImage);
   $('open-project-list').addEventListener('click',showProjectLibrary);
   $('refresh-project-list').addEventListener('click',refreshProjectLibrary);

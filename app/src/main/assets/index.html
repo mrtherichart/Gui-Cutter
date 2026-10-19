@@ -23,6 +23,7 @@
 <symbol id="i-precision" viewBox="0 0 24 24"><path d="M12 2v5m0 10v5 M2 12h5m10 0h5 M8 12a4 4 0 1 0 8 0 4 4 0 0 0-8 0"/></symbol>
 <symbol id="i-close" viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19"/></symbol>
 <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5 M15 4h5v5 M20 15v5h-5 M9 20H4v-5"/></symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24"><path d="m4 20 4.5-1 11-11-3.5-3.5-11 11z M14 6l3.5 3.5"/></symbol>
 <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5h7l2 3h9v11H3z"/></symbol>
 <symbol id="i-tune" viewBox="0 0 24 24"><path d="M4 6h16 M4 12h16 M4 18h16 M9 3v6 M15 9v6 M9 15v6"/></symbol>
 <symbol id="i-activity" viewBox="0 0 24 24"><path d="M2 12h4l3-6 5 12 3-6h5"/></symbol>
@@ -83,11 +84,11 @@
             <div class="project-current"><span class="overline">CURRENT PROJECT</span><strong id="folder-name">No project open</strong><small id="project-location">Choose or create a project to begin</small></div>
             <div class="project-primary-actions">
               <button id="create-project" class="primary"><span class="action-glyph">＋</span> New project</button>
-              <button id="new-from-image"><span class="action-glyph">▧</span> From image</button>
+              <button id="new-from-image"><span class="action-glyph">▧</span> New from image</button>
             </div>
             <div class="project-secondary-actions">
               <button id="open-project-list">Open project <span aria-hidden="true">›</span></button>
-              <button id="open-image">Import image</button>
+              <button id="open-image">Add source image</button>
             </div>
             <div class="project-secondary-actions">
               <button id="bundle-project">Export ZIP</button>
@@ -96,12 +97,14 @@
           </div>
           <div class="section-heading" id="project-library-heading"><span>Your projects</span><button class="plain-refresh" id="refresh-project-list" title="Refresh project list" aria-label="Refresh project list">↻</button></div>
           <div id="project-list" class="project-list"><p class="hint">Select a work folder in Preferences to see your projects.</p></div>
-          <div class="section-heading"><span>Project files</span><span class="overline">SOURCE / MANIFEST / PNGS</span></div>
+          <div class="section-heading"><span>Project files</span><button id="inspect-files" class="plain-refresh" type="button" aria-label="Refresh project files" title="Refresh project files">↻</button></div>
           <div id="file-list" class="file-list"></div>
-          <div class="action-row"><button id="inspect-files">Refresh files</button></div>
+          
         </section>
         <section id="tab-settings" class="tab-pane" hidden aria-label="Preferences">
-          <div class="section-intro"><span class="overline">02 / STORAGE</span><h3>Work folder</h3><p>Set once. Every new project is saved in its own subfolder.</p></div>
+          <div class="section-intro"><span class="overline">02 / PROJECT</span><h3>Current project</h3><p>Manage the project name and the permanent work folder.</p></div>
+          <div class="section-card settings-project-row"><div class="storage-current"><span>Project name</span><strong id="settings-project-name">No project open</strong></div><button id="rename-project" class="rename-icon" type="button" aria-label="Rename project" title="Rename project"><svg class="ico" aria-hidden="true"><use href="#i-pencil"></use></svg></button></div>
+          <div class="section-heading"><span>Work folder</span><span class="overline">ONE-TIME SETUP</span></div><p class="hint">Every project gets a separate folder inside this location.</p>
           <div class="section-card storage-preference">
             <div class="storage-current"><span>Gui Cutter work folder</span><strong id="work-folder-name">Not configured</strong></div>
             <button id="choose-folder" class="primary folder-picker-button">Choose work folder</button>
@@ -131,13 +134,13 @@
             <label class="switch"><span>Smart edge snapping<small>Detect and align to source artwork</small></span><input data-setting="edgeSnap" type="checkbox"></label>
             <label class="switch"><span>Crop alignment snapping<small>Align edges and centers with existing crops</small></span><input data-setting="cropSnap" type="checkbox"></label>
             <label class="switch"><span>Haptic feedback<small>Light response to snapping and crop completion</small></span><input data-setting="haptics" type="checkbox"></label>
-            <label class="switch"><span>Show detected edges</span><input data-setting="showEdges" type="checkbox"></label>
-            <label class="switch"><span>Hide unselected crops</span><input data-setting="hideUnselected" type="checkbox"></label>
-            <label class="switch"><span>Canvas asset labels</span><input data-setting="labels" type="checkbox"></label>
-            <label class="switch"><span>Transparency checkerboard</span><input data-setting="checkerboard" type="checkbox"></label>
-            <label class="switch"><span>Precision magnifier</span><input data-setting="magnifier" type="checkbox"></label>
-            <label class="switch"><span>Exploded nine-slice preview</span><input data-setting="explodeNine" type="checkbox"></label>
-            <label class="field"><span>Default crop</span><select id="setting-kind"><option value="normal">Normal</option><option value="nine_slice">Nine-slice</option></select></label>
+            <label class="switch"><span>Show detected edges<small>Overlay source-image edge detection results</small></span><input data-setting="showEdges" type="checkbox"></label>
+            <label class="switch"><span>Hide unselected crops<small>Keep only the selected crop visible</small></span><input data-setting="hideUnselected" type="checkbox"></label>
+            <label class="switch"><span>Canvas asset labels<small>Show crop names directly over the image</small></span><input data-setting="labels" type="checkbox"></label>
+            <label class="switch"><span>Transparency checkerboard<small>Distinguish transparent image areas</small></span><input data-setting="checkerboard" type="checkbox"></label>
+            <label class="switch"><span>Precision magnifier<small>Enlarge pixels while moving crop boundaries</small></span><input data-setting="magnifier" type="checkbox"></label>
+            <label class="switch"><span>Exploded nine-slice preview<small>Display the nine pieces separately in Preview</small></span><input data-setting="explodeNine" type="checkbox"></label>
+            <label class="field"><span>Default crop <small class="field-hint">Applied when drawing a new crop</small></span><select id="setting-kind"><option value="normal">Normal</option><option value="nine_slice">Nine-slice</option></select></label>
           </div>
           <button id="clean-canvas" class="quiet-action">Hide interface for inspection <svg class="ico" aria-hidden="true"><use href="#i-chevron"></use></svg></button>
         </section>
