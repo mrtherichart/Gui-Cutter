@@ -1,5 +1,6 @@
 import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} from './model.mjs';
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
+import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt} from './drawer-motion.mjs';
 
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
@@ -108,165 +109,253 @@ function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.cl
 const applicationTabs=new Set(['files','settings','developer']);
 function isAnyDrawerOpen(){return $('app-drawer').classList.contains('is-open')||$('drawer').classList.contains('is-open');}
 function bottomTabVisible(tab){return $('drawer').classList.contains('is-open')&&state.tab===tab;}
-function syncShelfHandles(){
-  const app=$('app-drawer').classList.contains('is-open'),bottom=$('drawer').classList.contains('is-open');
-  $('side-shelf-handle').hidden=app||bottom;
-  $('bottom-shelf-handle').hidden=app||bottom;
-  $('side-shelf-handle').setAttribute('aria-expanded',String(app));
-  $('bottom-shelf-handle').setAttribute('aria-expanded',String(bottom));
+
+const panelMap={app:$('app-drawer'),sheet:$('drawer')};
+const closedReveal={app:16,sheet:20};
+const drawerMotion={active:null,animation:null,multi:false};
+const dragDistance={app:null,sheet:null};
+function isAnyDrawerOpen(){
+  return panelMap.app.classList.contains('is-open')||panelMap.sheet.classList.contains('is-open')||!!drawerMotion.active||!!drawerMotion.animation;
 }
-function openTab(tab){
-  if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}
-  const app=applicationTabs.has(tab);
+function bottomTabVisible(tab){
+  return state.tab===tab&&(panelMap.sheet.classList.contains('is-open')||panelMap.sheet.classList.contains('is-peeking'));
+}
+function currentPanel(){
+  if(panelMap.app.classList.contains('is-open'))return 'app';
+  if(panelMap.sheet.classList.contains('is-open'))return 'sheet';
+  return null;
+}
+function panelSpan(kind){
+  return Math.max(1,(kind==='app'?panelMap.app.offsetWidth:panelMap.sheet.offsetHeight)-closedReveal[kind]);
+}
+function setTabs(tab){
   state.tab=tab;
-  for(const id of ['app-drawer','drawer']){
-    const el=$(id),open=app?(id==='app-drawer'):(id==='drawer');
-    el.classList.toggle('is-open',open);el.setAttribute('aria-hidden',String(!open));
-  }
-  $('shade').classList.add('is-open');
   for(const el of document.querySelectorAll('.tab-pane'))el.hidden=el.id!=='tab-'+tab;
   for(const el of document.querySelectorAll('[data-tab]'))el.classList.toggle('current',el.dataset.tab===tab);
-  if(tab==='files')inspectFiles();if(tab==='settings'||tab==='developer')refreshStatus();
-  if(!app){$('nudge-panel').hidden=true;}
-  syncShelfHandles();refreshUI();
+}
+function syncShelfHandles(){
+  $('side-grip').setAttribute('aria-expanded',String(panelMap.app.classList.contains('is-open')));
+  $('sheet-grip').setAttribute('aria-expanded',String(panelMap.sheet.classList.contains('is-open')));
+}
+function renderPanelProgress(kind,value){
+  const panel=panelMap[kind],p=clamp01(value);
+  const remaining=panelSpan(kind)*(1-p);
+  panel.classList.toggle('is-peeking',p>.0001&&!panel.classList.contains('is-open'));
+  panel.style.transform=kind==='app'?'translate3d('+(-remaining)+'px,0,0)':'translate3d(-50%,'+remaining+'px,0)';
+  const shade=$('shade');
+  shade.classList.toggle('is-peeking',p>.001);
+  shade.style.opacity=String(p);
+  shade.style.pointerEvents=p>.98?'auto':'none';
+  dragDistance[kind]=p;
+}
+function clearPanelInline(kind){
+  const el=panelMap[kind];el.style.transform='';
+  el.classList.remove('is-peeking');
+  dragDistance[kind]=null;
+}
+function finishPanel(kind,target){
+  const panel=panelMap[kind];
+  panel.classList.toggle('is-open',target===1);
+  panel.setAttribute('aria-hidden',String(target===0));
+  clearPanelInline(kind);
+  // Inactive sheet remains fully hidden; the two little grips alone stay exposed.
+  const other=kind==='app'?'sheet':'app';
+  if(target===1){
+    panelMap[other].classList.remove('is-open');
+    panelMap[other].setAttribute('aria-hidden','true');clearPanelInline(other);
+  }
+  const open=panelMap.app.classList.contains('is-open')||panelMap.sheet.classList.contains('is-open');
+  const shade=$('shade');
+  shade.classList.toggle('is-open',open);shade.classList.remove('is-peeking');
+  shade.style.opacity='';shade.style.pointerEvents='';
+  panel.classList.remove('gesture-live');
+  document.body.dataset.openDrawer=open?(panelMap.app.classList.contains('is-open')?'app':'sheet'):'none';
+  syncShelfHandles();
+  if(open)refreshUI();
+}
+function stopDrawerAnimation(){
+  if(!drawerMotion.animation)return;
+  cancelAnimationFrame(drawerMotion.animation.raf);
+  drawerMotion.animation=null;
+}
+function moveDrawer(kind,to,start,velocity=0){
+  stopDrawerAnimation();
+  const panel=panelMap[kind],from=clamp01(start),target=to?1:0;
+  panel.classList.add('gesture-live');
+  if(!settings.smoothMotion||window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    finishPanel(kind,target);return;
+  }
+  const fromTime=performance.now(),initialVelocity=Math.max(-3.5,Math.min(3.5,velocity*1000/panelSpan(kind)));
+  const anim={kind,raf:0};drawerMotion.animation=anim;
+  const frame=t=>{
+    if(drawerMotion.animation!==anim)return;
+    const sample=springAt(from,target,initialVelocity,t-fromTime);
+    renderPanelProgress(kind,sample.progress);
+    if(sample.done){
+      drawerMotion.animation=null;finishPanel(kind,target);
+    }else anim.raf=requestAnimationFrame(frame);
+  };
+  anim.raf=requestAnimationFrame(frame);
+}
+function showTab(tab){
+  const app=applicationTabs.has(tab),kind=app?'app':'sheet';
+  if(state.gestureData){cancelSingle();state.pointers.clear();$('magnifier').hidden=true;}
+  setTabs(tab);
+  // Populate content before it appears from the edge. Never redraw repeatedly during the pull.
+  if(!panelMap[kind].classList.contains('is-open')){
+    panelMap[kind].classList.add('is-peeking');
+    if(tab==='assets')renderList();
+    if(tab==='preview')renderPreview();
+  }
+  if(tab==='files')inspectFiles();
+  if(tab==='settings'||tab==='developer')refreshStatus();
+  if(!app)$('nudge-panel').hidden=true;
+  return kind;
+}
+function openTab(tab){
+  if(drawerMotion.multi)return;
+  const kind=showTab(tab);
+  if(currentPanel()===kind&&!drawerMotion.animation){refreshUI();return;}
+  const other=kind==='app'?'sheet':'app';
+  if(panelMap[other].classList.contains('is-open')){
+    panelMap[other].classList.remove('is-open');panelMap[other].setAttribute('aria-hidden','true');
+    clearPanelInline(other);
+  }
+  const start=drawerMotion.animation?.kind===kind?dragDistance[kind]??0:0;
+  moveDrawer(kind,1,start);
+  refreshUI();
 }
 function closeTab(){
-  $('drawer').classList.remove('is-open');$('app-drawer').classList.remove('is-open');$('shade').classList.remove('is-open');
-  $('drawer').setAttribute('aria-hidden','true');$('app-drawer').setAttribute('aria-hidden','true');
-  for(const id of ['drawer','app-drawer']){$(id).style.transform='';$(id).style.transition='';$(id).classList.remove('is-peeking');}
-  $('shade').classList.remove('is-peeking');$('shade').style.opacity='';
-  syncShelfHandles();
+  if(drawerMotion.active){drawerMotion.active.cancelled=true;drawerMotion.active=null;}
+  const kind=drawerMotion.animation?.kind||currentPanel();
+  if(!kind)return;
+  moveDrawer(kind,0,dragDistance[kind]??1);
 }
 function cleanCanvas(yes){document.body.classList.toggle('clean',yes);$('clean-restore').hidden=!yes;closeTab();}
 
-/* All drawer pointers are owned by this controller, independently of the image editor.
-   A second finger cancels a drawer pull immediately and blocks that gesture until lift-off. */
-const drawerFingers={ids:new Set(),multi:false,cancel:null};
-function watchDrawerFingers(){
-  document.addEventListener('pointerdown',e=>{
-    if(e.pointerType!=='touch')return;
-    drawerFingers.ids.add(e.pointerId);
-    if(drawerFingers.ids.size>1){drawerFingers.multi=true;drawerFingers.cancel?.();}
-  },true);
-  const finish=e=>{
-    if(e.pointerType!=='touch')return;
-    drawerFingers.ids.delete(e.pointerId);
-    if(!drawerFingers.ids.size)queueMicrotask(()=>{if(!drawerFingers.ids.size)drawerFingers.multi=false;});
-  };
-  document.addEventListener('pointerup',finish,true);
-  document.addEventListener('pointercancel',finish,true);
+function forbiddenGestureTarget(el,kind){
+  // Let sliders, editable fields, toggles and ordinary action buttons own their touches.
+  if(el.closest('input,select,textarea,[contenteditable="true"],[role="slider"],.step-field,.range-setting,.switch'))return true;
+  const button=el.closest('button');
+  if(!button)return false;
+  if(button.closest('.sheet-tabs,.app-nav')||button.classList.contains('asset-item'))return false;
+  if(button.id==='side-grip')return false;
+  return true;
 }
-function drawPull(panel,axis,remaining){
-  if(axis==='x')panel.style.transform='translate3d('+(-remaining)+'px,0,0)';
-  else panel.style.transform='translate3d(-50%,'+remaining+'px,0)';
-}
-function setupShelfPull(handle,panel,axis,tab){
-  let active=null,ignoreClick=false;
-  const sign=axis==='x'?1:-1;
-  const cancel=()=>{
-    if(!active)return;
-    // Multi-touch must not synthesize a button click after the pull is aborted.
-    ignoreClick=true;setTimeout(()=>{ignoreClick=false;},350);
-    active=null;panel.classList.remove('is-peeking');panel.style.transition='';panel.style.transform='';
-    $('shade').classList.remove('is-peeking');$('shade').style.opacity='';
-  };
-  handle.addEventListener('pointerdown',e=>{
-    if(e.pointerType!=='touch'||drawerFingers.multi||isAnyDrawerOpen())return;
-    active={id:e.pointerId,x:e.clientX,y:e.clientY,pulling:false,p:0};
-    drawerFingers.cancel=cancel;handle.setPointerCapture(e.pointerId);
-  });
-  handle.addEventListener('pointermove',e=>{
-    if(!active||e.pointerId!==active.id)return;
-    if(drawerFingers.multi){cancel();return;}
-    const primary=(axis==='x'?e.clientX-active.x:e.clientY-active.y)*sign;
-    const other=Math.abs(axis==='x'?e.clientY-active.y:e.clientX-active.x);
-    if(!active.pulling && (primary<7||primary<other*1.25))return;
-    if(!active.pulling){
-      active.pulling=true;panel.classList.add('is-peeking');panel.style.transition='none';
-      $('shade').classList.add('is-peeking');$('shade').style.transition='none';
-    }
-    const span=axis==='x'?panel.offsetWidth:panel.offsetHeight;
-    active.p=Math.max(0,Math.min(1,primary/span));
-    drawPull(panel,axis,span*(1-active.p));
-    $('shade').style.opacity=String(active.p*.85);
-    e.preventDefault();
-  },{passive:false});
-  function release(e){
-    if(!active||e.pointerId!==active.id)return;
-    const {pulling,p}=active;active=null;drawerFingers.cancel=null;
-    if(!pulling)return;ignoreClick=true;
-    $('shade').classList.remove('is-peeking');$('shade').style.transition='';$('shade').style.opacity='';
-    panel.style.transition='';panel.classList.remove('is-peeking');
-    if(e.type!=='pointercancel'&&!drawerFingers.multi&&p>.22){
-      openTab(tab);
-      requestAnimationFrame(()=>{panel.style.transform='';});
-    }else requestAnimationFrame(()=>{panel.style.transform='';});
+function scrollAncestor(el,panel){
+  let node=el;
+  while(node&&node!==panel){
+    if(node.scrollHeight>node.clientHeight+3&&getComputedStyle(node).overflowY.match(/auto|scroll/))return node;
+    node=node.parentElement;
   }
-  handle.addEventListener('pointerup',release);
-  handle.addEventListener('pointercancel',release);
-  handle.addEventListener('click',e=>{
-    if(ignoreClick||drawerFingers.multi){ignoreClick=false;e.preventDefault();return;}
-    openTab(tab);
-  });
+  return null;
 }
-function setupShelfDismiss(target,panel,axis){
-  let drag=null,ignoreClick=false;
-  const sign=axis==='x'?-1:1;
-  target.addEventListener('pointerdown',e=>{
-    if(e.pointerType!=='touch'||drawerFingers.multi||!panel.classList.contains('is-open'))return;
-    if(e.target.closest('button,input,select,textarea')&&!e.target.closest('#sheet-grip'))return;
-    drag={id:e.pointerId,x:e.clientX,y:e.clientY,pulling:false,p:0};
-    target.setPointerCapture(e.pointerId);
-    drawerFingers.cancel=()=>{drag=null;panel.style.transform='';panel.style.transition='';};
-  });
-  target.addEventListener('pointermove',e=>{
-    if(!drag||e.pointerId!==drag.id)return;
-    const primary=(axis==='x'?e.clientX-drag.x:e.clientY-drag.y)*sign;
-    const other=Math.abs(axis==='x'?e.clientY-drag.y:e.clientX-drag.x);
-    if(!drag.pulling&&(primary<7||primary<other*1.3))return;
-    if(drawerFingers.multi){drag=null;panel.style.transform='';panel.style.transition='';return;}
-    if(!drag.pulling){drag.pulling=true;panel.style.transition='none';}
-    const span=axis==='x'?panel.offsetWidth:panel.offsetHeight;
-    drag.p=Math.max(0,Math.min(1,primary/span));
-    drawPull(panel,axis,span*drag.p);
-    e.preventDefault();
-  },{passive:false});
-  const release=e=>{
-    if(!drag||drag.id!==e.pointerId)return;
-    const p=drag.p,pulling=drag.pulling;drag=null;drawerFingers.cancel=null;
-    if(!pulling)return;
-    ignoreClick=true;panel.style.transition='';
-    if(e.type!=='pointercancel'&&!drawerFingers.multi&&p>.17){
-      closeTab();
-    }else requestAnimationFrame(()=>{panel.style.transform='';});
+function beginDrawerTouch(kind,e){
+  if(e.touches.length!==1||drawerMotion.multi||drawerMotion.active)return;
+  const panel=panelMap[kind],target=e.target;
+  const opening=!panel.classList.contains('is-open');
+  // A second shelf cannot be dragged while its sibling occupies the workspace.
+  if(opening&&currentPanel()&&currentPanel()!==kind)return;
+  const grip=kind==='app'?$('side-grip'):$('sheet-grip');
+  if(opening&&!grip.contains(target))return;
+  if(!opening&&forbiddenGestureTarget(target,kind))return;
+  stopDrawerAnimation();
+  const touch=e.changedTouches[0],p=dragDistance[kind]??(opening?0:1);
+  drawerMotion.active={
+    kind,id:touch.identifier,x:touch.clientX,y:touch.clientY,p,
+    startP:p,track:new ReleaseTracker(),mode:null,locked:false,
+    scroll:opening?null:scrollAncestor(target,panel),fromGrip:grip.contains(target),
+    cancelled:false,t0:e.timeStamp
   };
-  target.addEventListener('pointerup',release);target.addEventListener('pointercancel',release);
-  target.addEventListener('click',e=>{if(ignoreClick){ignoreClick=false;e.preventDefault();e.stopImmediatePropagation();}},true);
+  drawerMotion.active.track.add(p*panelSpan(kind),e.timeStamp);
+}
+function moveDrawerTouch(kind,e){
+  const g=drawerMotion.active;
+  if(!g||g.kind!==kind||g.cancelled||drawerMotion.multi)return;
+  const finger=[...e.touches].find(t=>t.identifier===g.id);
+  if(!finger)return;
+  const dx=finger.clientX-g.x,dy=finger.clientY-g.y;
+  if(!g.locked){
+    const axis=lockedAxis(dx,dy);
+    if(!axis)return;
+    if(kind==='app'&&axis!=='x'){drawerMotion.active=null;return;}
+    if(kind==='sheet'&&axis==='x'){
+      if(g.startP<.01){drawerMotion.active=null;return;}
+      // Horizontal swipe on the entire sheet changes tabs; vertical scrolling is unchanged.
+      g.mode='tabs';g.locked=true;
+    }else if(kind==='sheet'&&axis==='y'){
+      if(!g.fromGrip&&dy<0){drawerMotion.active=null;return;}
+      if(!g.fromGrip&&g.scroll&&g.scroll.scrollTop>1){drawerMotion.active=null;return;}
+      g.mode='drawer';g.locked=true;
+    }else {g.mode='drawer';g.locked=true;}
+    if(g.mode==='drawer'&&g.fromGrip&&g.startP<.01){showTab(kind==='app'?'files':'assets');}
+    if(g.mode==='drawer'){$('shade').classList.add('is-peeking');panelMap[kind].classList.add('gesture-live');}
+  }
+  if(g.mode==='tabs'){e.preventDefault();return;}
+  const signed=kind==='app'?dx:-dy;
+  const p=clamp01(g.startP+signed/panelSpan(kind));
+  renderPanelProgress(kind,p);g.track.add(p*panelSpan(kind),e.timeStamp);
+  e.preventDefault();
+}
+function endDrawerTouch(kind,e){
+  const g=drawerMotion.active;
+  if(!g||g.kind!==kind||![...e.changedTouches].some(t=>t.identifier===g.id))return;
+  drawerMotion.active=null;
+  if(g.cancelled||drawerMotion.multi){if(g.mode==='drawer')moveDrawer(kind,g.startP>0.5?1:0,dragDistance[kind]??g.startP);return;}
+  const finger=[...e.changedTouches].find(t=>t.identifier===g.id);
+  const dx=finger.clientX-g.x,dy=finger.clientY-g.y;
+  if(g.mode==='tabs'){
+    const span=Math.abs(dx),duration=Math.max(1,e.timeStamp-g.t0),fast=span/duration>.38;
+    if(Math.abs(dx)>Math.abs(dy)*1.4&&(span>=63||(span>37&&fast))){
+      const tabs=['assets','properties','preview'],index=tabs.indexOf(state.tab),next=index+(dx<0?1:-1);
+      if(next>=0&&next<tabs.length)showTab(tabs[next]);
+      refreshUI();e.preventDefault();
+    }
+    return;
+  }
+  if(g.mode==='drawer'){
+    const p=dragDistance[kind]??g.startP;
+    // The panel surface requires a deliberate swipe; the small grip is more responsive.
+    const gestureTravel=Math.abs(kind==='app'?dx:dy);
+    if(!g.fromGrip&&gestureTravel<30){
+      moveDrawer(kind,g.startP>=.5?1:0,p);e.preventDefault();return;
+    }
+    g.track.add(p*panelSpan(kind),e.timeStamp);
+    const velocity=g.track.velocity().pixelsPerMs;
+    const target=settleTarget(p,g.track,panelSpan(kind));
+    moveDrawer(kind,target,p,velocity);
+    e.preventDefault();
+    return;
+  }
+  if(g.fromGrip&&!drawerMotion.multi&&Math.hypot(dx,dy)<12){
+    const target=panelMap[kind].classList.contains('is-open')?0:1;
+    if(target===1)showTab(kind==='app'?'files':'assets');
+    moveDrawer(kind,target,g.startP);
+    e.preventDefault();
+  }
 }
 function bindNavigationGestures(){
-  watchDrawerFingers();
-  setupShelfPull($('side-shelf-handle'),$('app-drawer'),'x','files');
-  setupShelfPull($('bottom-shelf-handle'),$('drawer'),'y','assets');
-  setupShelfDismiss($('app-drawer').querySelector('.app-panel-header'),$('app-drawer'),'x');
-  setupShelfDismiss($('drawer').querySelector('.sheet-header'),$('drawer'),'y');
-  setupShelfDismiss($('sheet-grip'),$('drawer'),'y');
-  const sheetTabs=['assets','properties','preview'];
-  let tabSwipe=null;
-  const nav=$('drawer').querySelector('.sheet-tabs');
-  nav.addEventListener('pointerdown',e=>{
-    if(e.pointerType==='touch'&&!drawerFingers.multi)tabSwipe={id:e.pointerId,x:e.clientX,y:e.clientY};
-  },{passive:true});
-  nav.addEventListener('pointerup',e=>{
-    if(!tabSwipe||tabSwipe.id!==e.pointerId)return;
-    const dx=e.clientX-tabSwipe.x,dy=e.clientY-tabSwipe.y;tabSwipe=null;
-    if(drawerFingers.multi||Math.abs(dx)<55||Math.abs(dx)<Math.abs(dy)*1.6)return;
-    const next=sheetTabs.indexOf(state.tab)+(dx<0?1:-1);
-    if(next>=0&&next<sheetTabs.length)openTab(sheetTabs[next]);
-  });
-  nav.addEventListener('pointercancel',()=>{tabSwipe=null;});
-  $('sheet-grip').addEventListener('keydown',e=>{
-    if(e.key==='Escape'||e.key==='Enter'||e.key===' '){e.preventDefault();closeTab();}
-  });
+  for(const kind of ['app','sheet']){
+    const panel=panelMap[kind];
+    panel.addEventListener('touchstart',e=>beginDrawerTouch(kind,e),{passive:true});
+    panel.addEventListener('touchmove',e=>moveDrawerTouch(kind,e),{passive:false});
+    panel.addEventListener('touchend',e=>endDrawerTouch(kind,e),{passive:false});
+    panel.addEventListener('touchcancel',e=>{
+      const g=drawerMotion.active;
+      if(g?.kind===kind){drawerMotion.active=null;if(g.mode==='drawer')moveDrawer(kind,g.startP>.5?1:0,dragDistance[kind]??g.startP);}
+    },{passive:true});
+  }
+  // Any second touch aborts a drawer drag. It can never steal a two-finger image gesture.
+  document.addEventListener('touchstart',e=>{
+    if(e.touches.length>1){drawerMotion.multi=true;
+      if(drawerMotion.active){const g=drawerMotion.active;drawerMotion.active=null;
+        if(g.mode==='drawer')moveDrawer(g.kind,g.startP>.5?1:0,dragDistance[g.kind]??g.startP);}
+    }
+  },{passive:true,capture:true});
+  document.addEventListener('touchend',e=>{if(!e.touches.length)drawerMotion.multi=false;},{passive:true,capture:true});
+  document.addEventListener('touchcancel',e=>{if(!e.touches.length)drawerMotion.multi=false;},{passive:true,capture:true});
+  $('sheet-grip').addEventListener('keydown',e=>{if(['Escape','Enter',' '].includes(e.key)){e.preventDefault();closeTab();}});
+  $('side-grip').addEventListener('keydown',e=>{if(['Escape','Enter',' '].includes(e.key)){e.preventDefault();openTab('files');}});
 }
 
 function createModal({title,initial='',message='',question=false}){

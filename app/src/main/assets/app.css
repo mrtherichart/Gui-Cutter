@@ -508,3 +508,46 @@ body {font-size:14px;line-height:1.42;font-weight:400;letter-spacing:-.005em;}
  .bottom-shelf-handle {bottom:calc(59px + var(--safe-bottom));}
  .has-selection .bottom-shelf-handle {bottom:calc(61px + var(--safe-bottom));left:50%;}
 }
+
+/* v0.1.5 — The handles are part of each drawer. Only the tiny grip is
+   exposed at rest; the large glass surfaces never obstruct the canvas. */
+.drawer {
+  visibility:visible;
+  opacity:1;
+  pointer-events:none;
+  transition:none;
+  will-change:transform;
+}
+.drawer.is-open {pointer-events:auto;transition:none;}
+.drawer.is-peeking,.drawer.gesture-live {visibility:visible;opacity:1;transition:none;pointer-events:none;}
+.drawer:not(.is-open):not(.is-peeking):not(.gesture-live) {
+  background:transparent;border-color:transparent;box-shadow:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+}
+.app-drawer {transform:translate3d(calc(-100% + 16px),0,0);}
+.app-drawer.is-open {transform:translate3d(0,0,0);}
+.bottom-drawer {transform:translate3d(-50%,calc(100% - 20px),0);}
+.bottom-drawer.is-open {transform:translate3d(-50%,0,0);}
+.side-grip {
+  position:absolute;z-index:3;right:0;top:50%;transform:translateY(-50%);
+  display:grid;place-items:center;width:16px;height:84px;padding:0;
+  border:0;border-radius:0;color:var(--caption-ink);
+  background:transparent;touch-action:none;pointer-events:auto;
+}
+.side-grip span {display:block;width:4px;height:38px;border-radius:6px;
+  background:currentColor;opacity:.65;box-shadow:0 0 7px rgba(14,42,62,.1);}
+.sheet-grip {pointer-events:auto;position:relative;z-index:2;height:20px;min-height:20px;
+ touch-action:none;}
+.sheet-grip span {width:39px;height:4px;opacity:.67;}
+/* Native buttons are not drawn around the small grip marks. */
+.closed-shelf-handle,.side-shelf-handle,.bottom-shelf-handle {display:none!important;}
+.shade.is-peeking {visibility:visible;transition:none;pointer-events:none;}
+.shade.is-open {pointer-events:auto;}
+.clean .drawer:not(.is-open) .side-grip,.clean .drawer:not(.is-open) .sheet-grip {display:none;}
+@media(prefers-reduced-motion: reduce){.drawer,.drawer.is-open{transition:none!important;}}
+
+/* A shelf obscures its sibling's resting grip, never two active handles at once. */
+body[data-open-drawer="app"] .bottom-drawer:not(.is-open) .sheet-grip,
+body[data-open-drawer="sheet"] .app-drawer:not(.is-open) .side-grip {
+  opacity:0;pointer-events:none;
+}

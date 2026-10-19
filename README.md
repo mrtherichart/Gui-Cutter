@@ -48,3 +48,11 @@ The tool rail is on the right. When hidden, both drawers show small independent 
 ### Custom icon guidance
 
 Visual family: bespoke thin-stroke tool glyphs designed on a consistent 24×24 viewBox, 1.75 px round strokes, optically centered, no persistent button tile, no color baked into icon paths; interactive accent supplied by CSS. See icon requirements in the corresponding design discussion.
+
+## v0.1.5 — attached grips and momentum-driven drawers
+
+Both drawer grips are literal bars attached to their panels, flush with the left and bottom display edges; the bottom grip sits below the zoom bar. The grips move with the drawer.
+
+A single gesture controller tracks finger distance and release velocity. The last deliberate movement direction can override the current drawer position, and a critically damped spring brings the panel gently to rest without bouncing. The full non-interactive surface of each panel accepts directional swipes; horizontal swipes switch the bottom sheet's three tabs. Vertical scrolling remains native. The bottom panel closes via a downward swipe in scrollable content only when the scroll is already at its top. Buttons, switches, inputs, and sliders keep their own gestures. A second finger cancels an active drawer drag. Tapping the exposed grip opens its shelf.
+
+Physics and direction locking live in `drawer-motion.mjs` with regression tests. The offline project format, Android app identity, signing, and WebView core are unchanged.
