@@ -60,7 +60,8 @@
       <div id="status" class="status" role="status" aria-live="polite" hidden></div>
       <button id="clean-restore" class="clean-restore" hidden title="Restore editor controls">Show tools</button>
     </div>
-    <div id="drawer-edge" class="drawer-edge" aria-hidden="true"></div>
+    <button id="side-shelf-handle" class="closed-shelf-handle side-shelf-handle" type="button" aria-label="Pull out application drawer" aria-controls="app-drawer" aria-expanded="false" title="Workspace and preferences"><span class="handle-ridges"></span><svg class="ico" aria-hidden="true"><use href="#i-chevron"></use></svg></button>
+    <button id="bottom-shelf-handle" class="closed-shelf-handle bottom-shelf-handle" type="button" aria-label="Pull up assets and inspector" aria-controls="drawer" aria-expanded="false" title="Assets and inspector"><span class="handle-ridges"></span><svg class="ico" aria-hidden="true"><use href="#i-chevron"></use></svg></button>
     <div id="shade" class="shade" aria-hidden="true"></div>
     <!-- Application navigation remains on the left in every orientation. -->
     <aside id="app-drawer" class="drawer app-drawer" aria-label="Application drawer" aria-hidden="true">
@@ -92,6 +93,15 @@
             <label class="range-setting" for="glass-opacity"><span class="range-heading"><strong>Transparency</strong><output id="glass-opacity-value" for="glass-opacity">24%</output></span><span class="setting-hint">How much of the canvas appears through the controls</span><input id="glass-opacity" type="range" min="0" max="65" step="1" value="24"></label>
             <label class="range-setting" for="glass-blur"><span class="range-heading"><strong>Blur intensity</strong><output id="glass-blur-value" for="glass-blur">20 px</output></span><span class="setting-hint">Softness of the glass surfaces</span><input id="glass-blur" type="range" min="0" max="36" step="1" value="20"></label>
             <div class="glass-sample"><span class="glass-sample-orbit"></span><div class="glass-sample-tile"><span class="sample-circle"></span><span>Live glass preview</span><small>Material / Ambient</small></div></div>
+          </div>
+          <div class="section-heading"><span>Selection highlight</span><span class="overline">FOUR FINISHES</span></div>
+          <div class="section-card tint-card">
+            <div class="tint-grid" role="group" aria-label="Selection outline color">
+              <button type="button" data-gizmo-tint="champagne" aria-label="Champagne gold" title="Champagne gold" class="tint-preview tint-champagne"><span class="tint-crop"><i></i><i></i><i></i><i></i></span><small>Gold</small></button>
+              <button type="button" data-gizmo-tint="glacier" aria-label="Glacier blue" title="Glacier blue" class="tint-preview tint-glacier"><span class="tint-crop"><i></i><i></i><i></i><i></i></span><small>Glacier</small></button>
+              <button type="button" data-gizmo-tint="orchid" aria-label="Orchid violet" title="Orchid violet" class="tint-preview tint-orchid"><span class="tint-crop"><i></i><i></i><i></i><i></i></span><small>Orchid</small></button>
+              <button type="button" data-gizmo-tint="jade" aria-label="Jade mint" title="Jade mint" class="tint-preview tint-jade"><span class="tint-crop"><i></i><i></i><i></i><i></i></span><small>Jade</small></button>
+            </div>
           </div>
           <div class="section-heading"><span>Interaction</span><span class="overline">TOOLS / FEEDBACK</span></div>
           <div class="section-card compact-card">

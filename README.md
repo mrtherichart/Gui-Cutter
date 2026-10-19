@@ -38,3 +38,13 @@ The mobile editor is not the original Python Qt code; the model and export forma
 ## v0.1.3 — touch and theming refinement
 
 System appearance is determined by Android's night-mode configuration and controls both WebView colors and native status/navigation bars. The assets sheet offers list and grid views with cached crop thumbnails. Drag from the left screen edge to open the app drawer, swipe left on its heading or navigation to dismiss; pull down the bottom sheet's grip/heading to close; swipe the sheet tabs horizontally; pull up on the lower controls to open Assets or the selection strip to open Inspector. Edge snapping and rectangular crop geometry are unchanged. The selection gizmo now has a gold rim, subtle halo and circular handles to match the design reference. Large glass panels use a lower-cost blur while small toolbars retain the full blur preference.
+
+## v0.1.4 — precision illumination and pull-out drawers
+
+Four optical gizmo highlights share the same near-white core: Champagne Gold (default), Glacier Blue, Orchid, and Jade. Choose one under Workspace > Preferences. The gizmo handles are smaller and use a halo rather than an opaque solid color. The new-crop dashed rectangle has a restrained green glow.
+
+The tool rail is on the right. When hidden, both drawers show small independent floating handles: drag right from the left-edge grip for Workspace, or up from the bottom grip for Assets/Inspector/Preview. Drawer movement tracks the finger and settles on release. Pull back from the app header, sheet header or sheet grip to close. Multi-touch disarms drawer pulls; the image's two-finger pan/zoom remains independent. Existing crop/export format and Android identity are unchanged.
+
+### Custom icon guidance
+
+Visual family: bespoke thin-stroke tool glyphs designed on a consistent 24×24 viewBox, 1.75 px round strokes, optically centered, no persistent button tile, no color baked into icon paths; interactive accent supplied by CSS. See icon requirements in the corresponding design discussion.

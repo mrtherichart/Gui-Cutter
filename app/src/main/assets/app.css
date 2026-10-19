@@ -468,3 +468,43 @@ body {font-size:14px;line-height:1.42;font-weight:400;letter-spacing:-.005em;}
 .app-panel-header,.sheet-header {touch-action:none;}
 .selection-strip,.bottom-bar {touch-action:none;}
 .asset-view-toggle:focus-visible {outline:2px solid var(--accent);outline-offset:2px;}
+
+/* Four deliberately composed gizmo finishes; the actual crop core stays almost white. */
+.tint-card {padding:11px!important;}
+.tint-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;}
+.tint-preview {--tint:255,177,76;min-width:0;min-height:75px;padding:9px 4px 6px!important;display:flex;align-items:center;justify-content:space-around;flex-direction:column;gap:10px;
+  border-radius:12px!important;border:1px solid var(--panel-line)!important;background:rgba(var(--glass-rgb),.09)!important;}
+.tint-preview small {font-size:10px;color:var(--caption-ink);}
+.tint-preview.selected {border-color:rgba(var(--tint),.8)!important;background:rgba(var(--tint),.09)!important;}
+.tint-preview:focus-visible {outline:2px solid rgb(var(--tint));outline-offset:1px;}
+.tint-glacier {--tint:77,196,241;}.tint-orchid {--tint:198,137,246;}.tint-jade {--tint:94,218,176;}
+.tint-crop {position:relative;display:block;width:32px;height:18px;border:1px solid #fffef8;box-shadow:0 0 3px 1px rgba(var(--tint),.9),0 0 12px 2px rgba(var(--tint),.5);}
+.tint-crop i {position:absolute;width:4px;height:4px;border-radius:50%;background:#fff;box-shadow:0 0 5px 2px rgba(var(--tint),.9);}
+.tint-crop i:nth-child(1){left:-2px;top:-2px}.tint-crop i:nth-child(2){right:-2px;top:-2px}
+.tint-crop i:nth-child(3){left:-2px;bottom:-2px}.tint-crop i:nth-child(4){right:-2px;bottom:-2px}
+
+/* Detached, always discoverable shelf handles; the editor remains full-screen. */
+.tool-rail {left:auto;right:12px;}
+.closed-shelf-handle {position:absolute;z-index:7;display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--glass-border);color:var(--text);background:rgba(var(--glass-rgb),var(--glass-alpha));
+  -webkit-backdrop-filter:blur(min(var(--glass-blur),16px));backdrop-filter:blur(min(var(--glass-blur),16px));
+  box-shadow:var(--shadow),inset 0 1px 0 var(--glass-highlight);touch-action:none;user-select:none;}
+.side-shelf-handle {left:0;top:49%;width:31px;height:78px;gap:1px;border-radius:0 16px 16px 0;padding:4px 2px;transform:translateY(-50%);}
+.side-shelf-handle .ico {width:13px;height:16px;stroke-width:2.2;opacity:.8;}
+.handle-ridges {width:8px;height:23px;opacity:.55;display:block;
+  background:repeating-linear-gradient(0deg,transparent 0 4px,currentColor 4px 5.5px,transparent 5.5px 8px);}
+.bottom-shelf-handle {left:50%;bottom:calc(80px + var(--safe-bottom));width:76px;height:30px;gap:7px;
+  border-radius:16px;transform:translateX(-50%);}
+.bottom-shelf-handle .handle-ridges {transform:rotate(90deg);height:18px;width:12px;}
+.bottom-shelf-handle .ico {transform:rotate(-90deg);width:14px;height:14px;opacity:.8;}
+.has-selection .bottom-shelf-handle {bottom:calc(148px + var(--safe-bottom));}
+.clean .closed-shelf-handle {display:none;}
+/* Dragging previews a drawer at precisely the distance the finger has pulled. */
+.drawer.is-peeking {visibility:visible;opacity:1;pointer-events:none;}
+.shade.is-peeking {visibility:visible;opacity:0;pointer-events:none;transition:none;}
+.app-panel-header,.sheet-header,.sheet-grip {touch-action:none;}
+@media(max-width:390px){.tool-rail {left:auto;right:8px;}}
+@media(max-height:450px) and (orientation:landscape){
+ .bottom-shelf-handle {bottom:calc(59px + var(--safe-bottom));}
+ .has-selection .bottom-shelf-handle {bottom:calc(61px + var(--safe-bottom));left:50%;}
+}
