@@ -149,6 +149,18 @@
           <div class="section-card"><div class="item-row"><span>Application</span><strong id="app-version">Browser</strong></div><div class="item-row"><span>Workspace</span><strong id="app-folder">—</strong></div><div class="item-row"><span>Native logging</span><strong id="log-state">Browser mode</strong></div></div>
           <div class="section-heading"><span>Updates</span><span class="overline">GITHUB RELEASES</span></div>
           <div class="section-card"><div class="action-row"><button id="check-update">Check for updates</button><button id="install-update" class="primary" hidden>Install update</button></div><p id="update-status" class="hint">Signed releases install through Android.</p></div>
+          <div id="haptic-trial" class="haptic-trial" hidden>
+            <div class="section-heading"><span>Haptic comparison</span><span class="overline">V0.1.12 ONLY</span></div>
+            <div class="section-card">
+              <p class="hint">Tap each effect to feel it and use it for crop snapping. The selection resets when the app restarts. Android's touch-feedback setting is respected.</p>
+              <div class="haptic-choices" role="group" aria-label="Test snap haptic effect">
+                <button type="button" data-haptic-trial="clock" aria-pressed="true">Clock tick</button>
+                <button type="button" data-haptic-trial="keyboard" aria-pressed="false">Keyboard tap</button>
+                <button type="button" data-haptic-trial="text" aria-pressed="false">Text handle</button>
+              </div>
+              <p id="haptic-trial-status" class="hint" role="status" aria-live="polite">Clock tick selected for snapping.</p>
+            </div>
+          </div>
           <div class="section-heading"><span>Utilities</span><span class="overline">ON-DEVICE DEBUGGING</span></div>
           <div class="section-card"><div class="action-row"><button id="export-log">Export native log</button><button id="test-folder">Test folder</button></div><div class="action-row"><button id="copy-diagnostics">Copy diagnostics</button><button id="clear-draft">Clear recovery draft</button></div><pre id="diagnostics" class="diagnostics"></pre></div>
         </section>

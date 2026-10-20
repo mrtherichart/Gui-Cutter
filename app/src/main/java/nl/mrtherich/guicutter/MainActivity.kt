@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.view.HapticFeedbackConstants
 import android.os.Bundle
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
@@ -320,13 +321,32 @@ class MainActivity : ComponentActivity() {
         val message=try { storage.testFolder() }catch(e:Exception){DevLog.write("STORAGE",e.stackTraceToString());"Folder test failed: ${e.message}"}
         sendEvent("workspace",JSONObject().put("message",message))
     }}
-    fun hapticTick() {
-        try {
-            val vib=getSystemService(VIBRATOR_SERVICE) as? android.os.Vibrator ?: return
-            if (android.os.Build.VERSION.SDK_INT>=26 && vib.hasVibrator())
-                vib.vibrate(android.os.VibrationEffect.createOneShot(6,18))
-        }catch(e:Exception){DevLog.write("HAPTIC",e.message?:"Unavailable")}
+    // Android's system-tuned effects are gentler than a fixed-duration vibrator pulse.
+    // The trial choices are temporary and available only in v0.1.12.
+    private fun playHaptic(kind: String, preview: Boolean) {
+        if (preview && BuildConfig.VERSION_NAME != "0.1.12") return
+        val effect = when (kind) {
+            "clock" -> HapticFeedbackConstants.CLOCK_TICK
+            "keyboard" -> HapticFeedbackConstants.KEYBOARD_TAP
+            "text" -> HapticFeedbackConstants.TEXT_HANDLE_MOVE
+            else -> return
+        }
+        runOnUiThread {
+            if (isFinishing || isDestroyed || !::webView.isInitialized) return@runOnUiThread
+            try {
+                // Honors the user's Android touch-feedback settings; never force a vibration.
+                val accepted = webView.performHapticFeedback(effect)
+                if (preview) sendEvent("haptic-preview", JSONObject()
+                    .put("effect", kind).put("accepted", accepted))
+            } catch (e: Exception) {
+                DevLog.write("HAPTIC", e.message ?: "Unavailable")
+                if (preview) sendEvent("haptic-preview", JSONObject()
+                    .put("effect", kind).put("accepted", false))
+            }
+        }
     }
+    fun hapticTick(kind: String) = playHaptic(kind, false)
+    fun previewHaptic(kind: String) = playHaptic(kind, true)
     fun exportLog()=logExporter.launch("Gui-Cutter-devlog.txt")
     override fun onDestroy() {
         updates.close();io.shutdown()

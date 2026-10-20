@@ -90,3 +90,8 @@ Canvas painting now limits source-image reads to the visible pixel area at high 
 ## v0.1.11 — immediate menu response
 
 Tab contents now appear on the first frame, and tap-open/tap-close drawers use shorter motion without altering swipe physics. Android Workspace file inspection and Settings status updates no longer synchronously block tab clicks; the file list builds progressively and ignores stale responses. SAF export listing uses a direct provider query when available. Blur settings, assets, project files, gestures and signing remain compatible with previous releases.
+
+
+## v0.1.12 — temporary haptic comparison
+
+Developer includes three test buttons for Android's `CLOCK_TICK`, `KEYBOARD_TAP`, and `TEXT_HANDLE_MOVE` effects. Tapping a button previews that effect and selects it for crop snapping for the current app session. Initial selection is Clock tick. The experiment is visible only in the v0.1.12 APK and is not stored in project files or Preferences. Both the test and ordinary snaps honor Android's system touch-feedback setting; the app no longer drives the vibration motor with a hard one-shot pulse. Remove the comparison controls after selecting the preferred effect in a later release.

@@ -7,6 +7,8 @@ import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
 
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
+// Temporary v0.1.12 on-device haptic comparison. No persisted preference.
+let trialHaptic='clock';
 const settingsKey='gui-cutter.preferences.v1';
 const defaults={edgeSnap:true,cropSnap:false,haptics:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true,assetView:'list',gizmoTint:'champagne'};
 let settings={...defaults};
@@ -661,7 +663,19 @@ function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('
 
 function tactile(){
   if(!settings.haptics)return;
-  try{if(native&&typeof native.hapticTick==='function')native.hapticTick();else navigator.vibrate?.(5);}catch{}
+  // Never fall back to a fixed-amplitude vibration: older motors can make it harsh.
+  try{native?.hapticTick?.(trialHaptic);}catch(e){log('Haptic unavailable',e.message);}
+}
+function selectTrialHaptic(effect){
+  if(!native||state.nativeInfo?.version!=='0.1.12'||!['clock','keyboard','text'].includes(effect))return;
+  trialHaptic=effect;
+  for(const button of document.querySelectorAll('[data-haptic-trial]')){
+    const selected=button.dataset.hapticTrial===effect;
+    button.classList.toggle('selected',selected);
+    button.setAttribute('aria-pressed',String(selected));
+  }
+  $('haptic-trial-status').textContent='Testing '+({clock:'Clock tick',keyboard:'Keyboard tap',text:'Text handle'}[effect])+'…';
+  nativeCall('previewHaptic',effect);
 }
 function announceSnap(signature){
   if(!signature){state.snapMemory='';return;}
@@ -827,7 +841,8 @@ function refreshStatus(payload=null){if(!native){$('app-version').textContent='B
     $('open-image').disabled=!info.hasProject||!!info.hasBase;
     $('reload-project').disabled=!info.hasProject;
     $('bundle-project').disabled=!info.hasBase;
-    $('log-state').textContent=info.logsEnabled?'Enabled in APK':'Disabled in build';updateButtons();}
+    $('log-state').textContent=info.logsEnabled?'Enabled in APK':'Disabled in build';
+    $('haptic-trial').hidden=info.version!=='0.1.12';updateButtons();}
   catch(e){errorMessage(e);}}
 let filesRequest=0;
 let fileRenderGeneration=0;
@@ -999,6 +1014,14 @@ function refreshUpdate(data){$('update-status').textContent=data.message||'';$('
 window.GuiCutterReceive=(type,data={})=>{
   try{
     if(type==='status'){refreshStatus(data);return;}
+    if(type==='haptic-preview'){
+      if(data.effect!==trialHaptic)return;
+      const name={clock:'Clock tick',keyboard:'Keyboard tap',text:'Text handle'}[data.effect];
+      $('haptic-trial-status').textContent=data.accepted
+        ? name+' selected for snapping. Android accepted the effect.'
+        : 'No haptic reported. Check Android touch feedback settings or try another effect.';
+      return;
+    }
     if(type==='system-theme'){state.nativeInfo=state.nativeInfo||{};state.nativeInfo.systemDark=!!data.dark;if(settings.theme==='system'){applyAppearance();scheduleDraw();}return;}
     if(type==='workspace'){
       if(data.message)toast(data.message);refreshStatus();
@@ -1055,6 +1078,7 @@ function bind(){
   c.addEventListener('wheel',e=>{if(!state.image)return;e.preventDefault();state.view.zoomTo(state.view.scale*(e.deltaY<0?1.25:.8),e.clientX,e.clientY);setZoomLabel();scheduleDraw();},{passive:false});
   for(const el of document.querySelectorAll('[data-mode]'))el.addEventListener('click',()=>{if(el.dataset.mode==='new'){settings.newKind='normal';saveSettings();}chooseMode(el.dataset.mode);toast(el.dataset.mode==='navigate'?'Pan · drag to move the image':el.dataset.mode==='edit'?'Edit · select or adjust a crop':state.project.active?'New · tap to copy selected size, drag for custom':'New · drag to set crop size',2100);});
   for(const el of document.querySelectorAll('[data-tab]'))el.addEventListener('click',()=>openTab(el.dataset.tab));
+  for(const el of document.querySelectorAll('[data-haptic-trial]'))el.addEventListener('click',()=>selectTrialHaptic(el.dataset.hapticTrial));
   for(const el of document.querySelectorAll('[data-setting]'))el.addEventListener('change',()=>{settings[el.dataset.setting]=el.checked;saveSettings();if(el.dataset.setting==='showEdges'&&settings.showEdges)buildOverlay();});
   $('setting-kind').addEventListener('change',e=>{settings.newKind=e.target.value;saveSettings();});
   $('explode-preview').addEventListener('change',e=>{settings.explodeNine=e.target.checked;saveSettings();renderPreview();});
