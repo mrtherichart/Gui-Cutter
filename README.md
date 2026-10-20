@@ -128,3 +128,19 @@ Inspector → **Transparency** edits picked background colours without changing 
 The bottom Preview tab is renamed **Transparency** and now groups the existing asset preview and colour-key controls. Image-wide transparency settings live under Workspace in the left drawer, while crop-specific settings are in the bottom Transparency tab. Both reuse the same processing, controls and project JSON.
 
 The canvas draws its transparency checkerboard once in image coordinates. Image-wide transparency stays visible when an asset is selected, and selected crop overrides replace rather than double-composite their source pixels. This avoids selection-dependent checkerboard shifts and unwanted preview differences. Source images and export formats remain unchanged.
+
+## v0.2.3 — background comparison and improved transparency
+
+The Transparency tab adds ten compact backdrop comparisons: checkerboard, black,
+white, grey, red, green, blue, cyan, yellow and magenta. The chosen backdrop
+is a local display preference; it never changes source images, PNG exports or
+project JSON. The same comparison applies to the main zoomable canvas.
+
+Background removal now follows four-connected regions from every crop border,
+checks local contrast before crossing into similarly coloured foreground, and
+recognizes gently shaded variations of sampled colours. Explicitly picked
+checkerboard colours can connect across hard colour boundaries. The existing
+edge-only decontamination and non-destructive per-image/per-crop JSON persist.
+This is a conservative improvement, not a general-purpose photo matting tool:
+heavily textured shadows and indistinguishable foreground/background pixels
+may still need image editing outside GUI Cutter.

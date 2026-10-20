@@ -84,3 +84,42 @@ test('opacity correction leaves fully opaque foreground pixels unchanged',()=>{
   applyTransparency(im,{colors:['#FFFFFF'],tolerance:20});
   assert.deepEqual(pixel(im,7,7),original);
 });
+
+test('soft neutral shadows connected to a white key are removed',()=>{
+  const im=picture(13,9,[255,255,255]);
+  for(let y=1;y<8;y++)for(let x=1;x<12;x++)dot(im,x,y,[245,245,245]);
+  for(let y=2;y<7;y++)for(let x=2;x<11;x++)dot(im,x,y,[228,228,228]);
+  for(let y=3;y<6;y++)for(let x=3;x<10;x++)dot(im,x,y,[211,211,211]);
+  for(let y=4;y<5;y++)for(let x=4;x<9;x++)dot(im,x,y,[80,42,12]);
+  applyTransparency(im,{colors:['#FFFFFF'],tolerance:30});
+  assert.equal(pixel(im,2,3)[3],0,'outside diffuse shading should go');
+  assert.equal(pixel(im,4,4)[3],255,'warm artwork should stay');
+});
+
+test('strong boundaries block similarly coloured foreground even at medium tolerance',()=>{
+  const im=picture(13,13,[255,255,255]);
+  for(let y=2;y<11;y++)for(let x=2;x<11;x++)dot(im,x,y,[191,191,191]);
+  dot(im,6,6,[255,255,255]);
+  applyTransparency(im,{colors:['#FFFFFF'],tolerance:55});
+  assert.equal(pixel(im,0,0)[3],0);
+  assert.equal(pixel(im,6,6)[3],255,'enclosed highlight should remain');
+  assert.equal(pixel(im,5,6)[3],255,'strong edge should preserve object');
+});
+
+test('selected colour values are still the only persisted background data',()=>{
+  const p=new Project();p.imageWidth=20;p.imageHeight=20;p.reset([]);
+  p.setTransparency({colors:['#EEEEEE','#FFFFFF'],tolerance:37,all:false},'image');
+  assert.deepEqual(Object.keys(p.manifest().transparency),['colors','tolerance','all']);
+});
+
+test('two picked background colours can cross hard checkerboard boundaries',()=>{
+  const im=picture(16,16,[255,255,255]);
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++){
+    if(((x/4)|0)+((y/4)|0)&1)dot(im,x,y,[198,200,202]);
+  }
+  for(let y=5;y<11;y++)for(let x=5;x<11;x++)dot(im,x,y,[110,60,28]);
+  applyTransparency(im,{colors:['#FFFFFF','#C6C8CA'],tolerance:14});
+  assert.equal(pixel(im,5,1)[3],0,'inner checker cell removed');
+  assert.equal(pixel(im,13,13)[3],0,'all four corners and inner cells removed');
+  assert.equal(pixel(im,7,7)[3],255,'foreground still visible');
+});

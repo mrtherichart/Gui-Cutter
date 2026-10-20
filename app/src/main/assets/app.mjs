@@ -9,7 +9,7 @@ import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
 const settingsKey='gui-cutter.preferences.v1';
-const defaults={edgeSnap:true,cropSnap:false,haptics:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true,assetView:'list',gizmoTint:'champagne'};
+const defaults={edgeSnap:true,cropSnap:false,haptics:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true,assetView:'list',gizmoTint:'champagne',previewBackground:'checker'};
 let settings={...defaults};
 try{
   const saved=JSON.parse(localStorage.getItem(settingsKey)||'{}');
@@ -101,7 +101,7 @@ function applyAppearance(){
     const el=$(id);el.style.setProperty('--fill',(100*(el.valueAsNumber-Number(el.min))/(Number(el.max)-Number(el.min)))+'%');
   }
 }
-function saveSettings(){localStorage.setItem(settingsKey,JSON.stringify(settings));if(!settings.magnifier)hideMagnifier();applyAppearance();for(const el of document.querySelectorAll('[data-setting]'))el.checked=!!settings[el.dataset.setting];$('setting-kind').value=settings.newKind;$('setting-theme').value=settings.theme;$('explode-preview').checked=settings.explodeNine;updateButtons();scheduleDraw();}
+function saveSettings(){localStorage.setItem(settingsKey,JSON.stringify(settings));if(!settings.magnifier)hideMagnifier();applyAppearance();for(const el of document.querySelectorAll('[data-setting]'))el.checked=!!settings[el.dataset.setting];$('setting-kind').value=settings.newKind;$('setting-theme').value=settings.theme;$('explode-preview').checked=settings.explodeNine;updateButtons();updatePreviewBackground();scheduleDraw();}
 function drawSelectionThumb(asset){
   const canvas=$('selection-thumb');if(!state.image||!asset)return;
   const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.imageSmoothingEnabled=false;
@@ -449,6 +449,17 @@ function createModal({title,initial='',message='',question=false}){
 
 // Reuse the full workspace as a pinch-zoomable live preview; only an optional
 // The same colour-key renderer powers the image-wide and crop views.
+// Preview colours are visual-only settings, not part of saved PNGs or JSON.
+const previewBackgroundColors={checker:null,black:'#000000',white:'#ffffff',grey:'#808080',red:'#ff0000',green:'#00ff00',blue:'#0000ff',cyan:'#00ffff',yellow:'#ffff00',magenta:'#ff00ff'};
+function updatePreviewBackground(){
+  if(!(settings.previewBackground in previewBackgroundColors))settings.previewBackground='checker';
+  const color=previewBackgroundColors[settings.previewBackground],box=$('preview')?.parentElement;
+  if(box){box.style.backgroundImage=color?'none':'';box.style.backgroundColor=color??'';}
+  for(const button of document.querySelectorAll('[data-preview-background]')){
+    const current=button.dataset.previewBackground===settings.previewBackground;
+    button.setAttribute('aria-pressed',String(current));
+  }
+}
 const transparencyCache = new Map();
 function transparencyPreview(scope='crop', asset=state.project.active){
   if(!state.image)return null;
@@ -526,12 +537,16 @@ function redraw(){
   ctx.fillStyle=resolvedTheme()==='dark'?'#121c2a':'#8d9ca7';ctx.fillRect(0,0,w,h);
   if(!state.image)return;
   const v=state.view,im=state.image,p=v.toScreen(0,0),iw=im.naturalWidth,ih=im.naturalHeight;
-  if(settings.checkerboard){
-    const cells=visibleCheckerboard(p.x,p.y,v.scale,iw,ih,w,h);
+  const comparison=previewBackgroundColors[settings.previewBackground];
+  if(comparison||settings.previewBackground==='checker'&&settings.checkerboard){
     ctx.save();ctx.beginPath();ctx.rect(p.x,p.y,iw*v.scale,ih*v.scale);ctx.clip();
-    ctx.fillStyle='#f4f4f4';ctx.fillRect(p.x,p.y,iw*v.scale,ih*v.scale);
-    if(cells){ctx.fillStyle='#d8dadd';for(let iy=cells.y0;iy<cells.y1;iy++)for(let ix=cells.x0;ix<cells.x1;ix++)
-      if((ix+iy)%2===0)ctx.fillRect(p.x+ix*cells.tile,p.y+iy*cells.tile,cells.tile,cells.tile);}
+    if(comparison){ctx.fillStyle=comparison;ctx.fillRect(p.x,p.y,iw*v.scale,ih*v.scale);}
+    else{
+      const cells=visibleCheckerboard(p.x,p.y,v.scale,iw,ih,w,h);
+      ctx.fillStyle='#f4f4f4';ctx.fillRect(p.x,p.y,iw*v.scale,ih*v.scale);
+      if(cells){ctx.fillStyle='#d8dadd';for(let iy=cells.y0;iy<cells.y1;iy++)for(let ix=cells.x0;ix<cells.x1;ix++)
+        if((ix+iy)%2===0)ctx.fillRect(p.x+ix*cells.tile,p.y+iy*cells.tile,cells.tile,cells.tile);}
+    }
     ctx.restore();
   }
   ctx.imageSmoothingEnabled=false;
@@ -1205,6 +1220,7 @@ function bind(){
   for(const el of document.querySelectorAll('[data-setting]'))el.addEventListener('change',()=>{settings[el.dataset.setting]=el.checked;saveSettings();if(el.dataset.setting==='showEdges'&&settings.showEdges)buildOverlay();});
   $('setting-kind').addEventListener('change',e=>{settings.newKind=e.target.value;saveSettings();});
   $('explode-preview').addEventListener('change',e=>{settings.explodeNine=e.target.checked;saveSettings();renderPreview();});
+  for(const button of document.querySelectorAll('[data-preview-background]'))button.addEventListener('click',()=>{settings.previewBackground=button.dataset.previewBackground;saveSettings();});
   $('new-kind').addEventListener('click',()=>{settings.newKind='nine_slice';saveSettings();chooseMode('new');toast(state.project.active?'Nine-slice · tap to copy selected or drag to draw':'Nine-slice · drag to draw',2100);});
   $('setting-theme').addEventListener('change',e=>{settings.theme=e.target.value;saveSettings();if(native)nativeCall('setUiTheme',settings.theme);});
   for(const btn of document.querySelectorAll('[data-gizmo-tint]'))btn.addEventListener('click',()=>{

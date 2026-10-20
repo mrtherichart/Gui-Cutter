@@ -711,3 +711,9 @@ body[data-open-drawer="app"] .app-edge-swipe,body[data-open-drawer="sheet"] .app
 .transparency-range input{grid-column:1 / -1;width:100%;accent-color:var(--accent);}
 .transparency-section .switch{margin-top:12px;}
 .transparency-section .hint{margin:10px 0 0;font-size:11px;}
+
+/* Compact background comparisons; 10 colours remain in one row on a phone. */
+.preview-backgrounds{display:flex;align-items:center;justify-content:space-between;gap:4px;margin:7px 0 12px;}
+.preview-background-choice{display:block;flex:1 1 0;min-width:0;max-width:29px;aspect-ratio:1;background:var(--choice-color,transparent);border:1px solid var(--panel-line);border-radius:var(--ui-radius);box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);padding:0;}
+.preview-background-choice.is-checker{background:repeating-conic-gradient(#d9dcdf 0 25%,#f5f6f7 0 50%) 50%/12px 12px;}
+.preview-background-choice[aria-pressed="true"]{outline:2px solid var(--active-ink);outline-offset:2px;}

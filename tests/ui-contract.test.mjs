@@ -74,3 +74,11 @@ test('transparency controls remain in existing drawers without another tool mode
  assert.match(app,/ctx\.clip\('evenodd'\)/);
  assert.doesNotMatch(app,/ctx\.clearRect\(tl\.x,tl\.y,rw,rh\)/);
 });
+
+test('transparency preview offers ten compact comparison backgrounds',()=>{
+ const expected=['checker','black','white','grey','red','green','blue','cyan','yellow','magenta'];
+ const choices=[...html.matchAll(/data-preview-background="([^"]+)"/g)].map(m=>m[1]);
+ assert.deepEqual(choices,expected);
+ assert.match(app,/previewBackgroundColors/);
+ assert.match(css,/\.preview-background-choice/);
+});
