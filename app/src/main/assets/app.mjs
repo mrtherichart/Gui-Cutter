@@ -28,7 +28,7 @@ const tintChoices={
 };
 if(!tintChoices[settings.gizmoTint])settings.gizmoTint='champagne';
 const state={project:new Project(),view:new Viewport(),image:null,edges:null,overlay:null,mode:'edit',pointers:new Map(),gesture:null,gestureData:null,previewRect:null,snapPoint:null,busy:false,tab:'assets',projectKey:'browser',nativeInfo:null,toastTimer:0,draftTimer:0,imageSeq:0,nudge:1,canvasDpr:1,lastStatus:'Ready',imageLoaded:false,pendingSave:null,lastNavigationTap:null,lastTemplateAsset:null};
-state.transparencyPreview=null;state.transparencyDraft=null;
+state.transparencyDraft=null;state.transparencyPickScope="crop";
 state.alignGuides=[];state.snapMemory='';state.lastSnapAt=0;state.focusEpoch=0;
 const ctx=$('editor').getContext('2d');
 const appCtx=()=>({iw:state.image?.naturalWidth||0,ih:state.image?.naturalHeight||0});
@@ -62,7 +62,7 @@ function syncToggleButton(id,enabled){
   const el=$(id);el.classList.toggle('selected',enabled);
   el.setAttribute('aria-pressed',String(enabled));
 }
-function refreshUI(){updateButtons();renderList();renderProperties();renderPreview();scheduleDraw();}
+function refreshUI(){updateButtons();renderList();renderProperties();renderTransparency('image');renderTransparency('crop');renderPreview();scheduleDraw();}
 // Live gestures only update the relevant visible controls once per animation frame.
 // Never reconstruct the entire asset library while a finger is moving.
 let liveChromeQueued=false;
@@ -263,7 +263,8 @@ function showTab(tab){
   // Make the selected page visible first; expensive data work is requested separately.
   if(tab==='assets')renderList();
   if(tab==='properties')renderProperties();
-  if(tab==='preview')schedulePreview();
+  if(tab==='preview'){renderTransparency('crop');schedulePreview();}
+  if(tab==='files')renderTransparency('image');
   if(tab==='files' && (changed||opening)){inspectFiles();refreshProjectLibrary();}
   if((tab==='settings'||tab==='developer') && changed && native)nativeCall('requestStatus');
   if(!app){setNudgeOpen(false);}
@@ -447,42 +448,62 @@ function createModal({title,initial='',message='',question=false}){
 
 
 // Reuse the full workspace as a pinch-zoomable live preview; only an optional
-// crop-level override is processed when a crop is selected.
-function transparencyPreview(){
-  if(!state.image||['move','handle'].includes(state.gesture))return null;
-  const a=state.project.active,t=state.transparencyDraft??state.project.effectiveTransparency(a);
+// The same colour-key renderer powers the image-wide and crop views.
+const transparencyCache = new Map();
+function transparencyPreview(scope='crop', asset=state.project.active){
+  if(!state.image)return null;
+  const imageScope=scope==='image';
+  const a=imageScope?null:asset;
+  if(!imageScope&&!a)return null;
+  // During a crop drag the cropped preview changes bounds; keep the source
+  // visible rather than allocating a new full-resolution mask on every move.
+  if(!imageScope&&['move','handle'].includes(state.gesture))return null;
+  const draft=state.transparencyDraft;
+  const t=draft?.scope===scope&&(imageScope||a===state.project.active) ? draft.config : (imageScope?normalizeTransparency(state.project.transparency):state.project.effectiveTransparency(a));
   if(!t.colors.length)return null;
   const r=a??{x:0,y:0,w:state.image.naturalWidth,h:state.image.naturalHeight};
-  const key=[state.imageSeq,state.project.revision,state.project.selected,r.x,r.y,r.w,r.h,JSON.stringify(t)].join(':');
-  if(state.transparencyPreview?.key===key)return state.transparencyPreview.canvas;
-  // Limit UI preview memory for large sheets; exports always work at full resolution.
+  const key=[scope,state.imageSeq,state.project.revision,a?.asset_id??'',r.x,r.y,r.w,r.h,JSON.stringify(t)].join(':');
+  if(transparencyCache.has(key))return transparencyCache.get(key);
+  // Preserve source-pixel resolution for UI assets. A large image is reduced
+  // only when needed to limit WebView memory; PNG exports remain full resolution.
   const scale=Math.min(1,Math.sqrt(1_200_000/(r.w*r.h)));
   const c=document.createElement('canvas');c.width=Math.max(1,Math.round(r.w*scale));c.height=Math.max(1,Math.round(r.h*scale));
-  const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(state.image,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
+  const cx=c.getContext('2d',{willReadFrequently:true});cx.imageSmoothingEnabled=false;
+  cx.drawImage(state.image,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
   try{const pixels=cx.getImageData(0,0,c.width,c.height);applyTransparency(pixels,t);cx.putImageData(pixels,0,0);}
   catch(e){errorMessage(e);return null;}
-  state.transparencyPreview={key,canvas:c};return c;
+  if(transparencyCache.size>=8)transparencyCache.clear();
+  transparencyCache.set(key,c);return c;
 }
-function transparencyConfig(){return normalizeTransparency(state.project.effectiveTransparency());}
-function updateTransparency(config){if(state.busy)return;state.transparencyDraft=null;state.transparencyPreview=null;
-  state.project.setTransparency(config);refreshUI();scheduleDraft();}
-function renderTransparency(){
-  const a=state.project.active,t=state.transparencyDraft??transparencyConfig();
-  $('transparency-scope').textContent=a?a.asset_id:'Entire image';
-  const list=$('transparency-colors');list.replaceChildren();
+function transparencyConfig(scope){
+  return normalizeTransparency(scope==='image' ? state.project.transparency : state.project.effectiveTransparency());
+}
+function updateTransparency(config,scope){
+  if(state.busy||scope==='crop'&&!state.project.active)return;
+  state.transparencyDraft=null;transparencyCache.clear();previousPreviewKey=null;
+  state.project.setTransparency(config,scope);refreshUI();scheduleDraft();
+}
+function renderTransparency(scope){
+  const panel=$('transparency-'+scope);
+  if(!panel)return;
+  if(scope==='crop')panel.hidden=!state.project.active;
+  const t=state.transparencyDraft?.scope===scope?state.transparencyDraft.config:transparencyConfig(scope);
+  const list=$('transparency-'+scope+'-colors');list.replaceChildren();
   if(!t.colors.length){const hint=document.createElement('span');hint.className='hint';hint.textContent='No colours picked';list.append(hint);}
   for(const color of t.colors){const tag=document.createElement('span');tag.className='transparency-swatch';
     const swatch=document.createElement('i');swatch.style.backgroundColor=color;
     const label=document.createElement('span');label.textContent=color;
     const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='Remove '+color;remove.setAttribute('aria-label','Remove '+color);
-    remove.addEventListener('click',()=>updateTransparency({...t,colors:t.colors.filter(v=>v!==color)}));
+    remove.addEventListener('click',()=>updateTransparency({...t,colors:t.colors.filter(v=>v!==color)},scope));
     tag.append(swatch,label,remove);list.append(tag);
   }
-  $('transparency-tolerance').value=String(t.tolerance);$('transparency-value').textContent=String(t.tolerance);
-  $('transparency-all').checked=t.all;
-  $('transparency-pick').disabled=!state.image||state.busy;
+  $('transparency-'+scope+'-tolerance').value=String(t.tolerance);
+  $('transparency-'+scope+'-value').textContent=String(t.tolerance);
+  $('transparency-'+scope+'-all').checked=t.all;
+  $('transparency-'+scope+'-pick').disabled=!state.image||state.busy||scope==='crop'&&!state.project.active;
+  const a=scope==='crop' ? state.project.active : null;
   const r=a??(state.image&&{w:state.image.naturalWidth,h:state.image.naturalHeight});
-  $('transparency-hint').textContent=r&&r.w*r.h>1_200_000?'Main canvas preview is reduced for large images; PNGs export at full resolution.':'Live preview on the main canvas; pinch to zoom.';
+  $('transparency-'+scope+'-hint').textContent=r&&r.w*r.h>1_200_000?'Large-image preview may be reduced; PNGs export at full resolution.':'Live preview on the canvas; pinch to zoom.';
 }
 function pickTransparencyColor(screen){
   if(!state.image)return;
@@ -492,8 +513,10 @@ function pickTransparencyColor(screen){
   const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(state.image,x,y,1,1,0,0,1,1);
   const px=cx.getImageData(0,0,1,1).data;
   const hex='#'+[px[0],px[1],px[2]].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();
-  const t=transparencyConfig();if(!t.colors.includes(hex))updateTransparency({...t,colors:[...t.colors,hex]});
-  chooseMode('edit');openTab('properties');toast('Added '+hex);
+  const scope=state.transparencyPickScope;
+  const t=transparencyConfig(scope);
+  if(!t.colors.includes(hex))updateTransparency({...t,colors:[...t.colors,hex]},scope);
+  chooseMode('edit');openTab(scope==='image'?'files':'preview');toast('Added '+hex);
 }
 
 function redraw(){
@@ -515,21 +538,27 @@ function redraw(){
   const source=visibleImageRegion(p.x,p.y,v.scale,iw,ih,w,h);
   if(source){
     const {sx,sy,sw,sh,dx,dy,dw,dh}=source;
-    ctx.drawImage(im,sx,sy,sw,sh,dx,dy,dw,dh);
-    const preview=transparencyPreview();
-    if(preview){
-      const a=state.project.active,r=a??{x:0,y:0,w:iw,h:ih};
-      const tl=v.toScreen(r.x,r.y),rw=r.w*v.scale,rh=r.h*v.scale;
-      ctx.clearRect(tl.x,tl.y,rw,rh);
+    const mainPreview=transparencyPreview('image');
+    const a=state.project.active;
+    // Crop overrides are rendered only when an asset has its own settings;
+    // inherited image settings use exactly the same pixels as the source view.
+    const cropPreview=a?.transparency?transparencyPreview('crop',a):null;
+    const r=a,tl=r&&v.toScreen(r.x,r.y);
+    const rw=r?.w*v.scale,rh=r?.h*v.scale;
+    const paintSource=()=>{
+      if(mainPreview){
+        const scaleX=mainPreview.width/iw,scaleY=mainPreview.height/ih;
+        ctx.drawImage(mainPreview,sx*scaleX,sy*scaleY,sw*scaleX,sh*scaleY,dx,dy,dw,dh);
+      }else ctx.drawImage(im,sx,sy,sw,sh,dx,dy,dw,dh);
+    };
+    if(cropPreview&&tl){
+      // Do not paint the opaque source beneath transparent crop pixels.
+      // The existing checkerboard stays aligned to the original image.
+      ctx.save();ctx.beginPath();ctx.rect(0,0,w,h);ctx.rect(tl.x,tl.y,rw,rh);ctx.clip('evenodd');
+      paintSource();ctx.restore();
       ctx.save();ctx.beginPath();ctx.rect(tl.x,tl.y,rw,rh);ctx.clip();
-      ctx.fillStyle='#f4f4f4';ctx.fillRect(tl.x,tl.y,rw,rh);
-      if(settings.checkerboard){ctx.fillStyle='#d8dadd';const tile=Math.max(2,12*v.scale);
-        if(tile>=2){const i0=Math.max(0,Math.floor((0-tl.x)/tile)),i1=Math.min(1000,Math.ceil((w-tl.x)/tile));
-          const j0=Math.max(0,Math.floor((0-tl.y)/tile)),j1=Math.min(1000,Math.ceil((h-tl.y)/tile));
-          for(let j=j0;j<j1;j++)for(let i=i0;i<i1;i++)if((i+j)%2===0)ctx.fillRect(tl.x+i*tile,tl.y+j*tile,tile,tile);
-        }}
-      ctx.imageSmoothingEnabled=false;ctx.drawImage(preview,tl.x,tl.y,rw,rh);ctx.restore();
-    }
+      ctx.drawImage(cropPreview,tl.x,tl.y,rw,rh);ctx.restore();
+    }else paintSource();
     if(settings.showEdges&&state.overlay)ctx.drawImage(state.overlay,sx,sy,sw,sh,dx,dy,dw,dh);
   }
   for(let i=0;i<state.project.assets.length;i++){
@@ -617,7 +646,7 @@ async function openImageElement(src,loadManifest=true){
     if(seq!==state.imageSeq)return;
     state.image=image;state.imageLoaded=true;
     state.project.imageWidth=image.naturalWidth;state.project.imageHeight=image.naturalHeight;
-    state.edges=null;state.overlay=null;state.lastTemplateAsset=null;state.transparencyPreview=null;state.transparencyDraft=null;assetThumbnails.clear();$('empty').hidden=true;
+    state.edges=null;state.overlay=null;state.lastTemplateAsset=null;state.transparencyDraft=null;transparencyCache.clear();assetThumbnails.clear();$('empty').hidden=true;
     if(loadManifest&&native){try{const json=native.readManifest();state.project.load(json?JSON.parse(json):{assets:[]});}
       catch(e){state.project.reset([]);errorMessage('Could not load manifest: '+e.message);}}
     else state.project.reset([]);
@@ -723,7 +752,7 @@ function createNumericControls(){for(const key of Object.keys(labels)){const out
     const input=document.createElement('input');input.type='number';input.step='1';input.id='prop-'+key;input.inputMode='numeric';
     const plus=document.createElement('button');plus.textContent='+';plus.type='button';plus.addEventListener('click',()=>nudgeField(key,1));
     row.append(minus,input,plus);outer.append(label,row);$(['left','top','right','bottom'].includes(key)?'margin-grid':'numeric-grid').append(outer);}}
-function renderProperties(){if(!bottomTabVisible('properties'))return;renderTransparency();const a=state.project.active;$('props-none').hidden=!!a;$('props-fields').hidden=!a;if(!a)return;
+function renderProperties(){if(!bottomTabVisible('properties'))return;const a=state.project.active;$('props-none').hidden=!!a;$('props-fields').hidden=!a;if(!a)return;
   $('prop-name').value=a.asset_id;$('prop-kind').value=a.kind;$('nine-card').hidden=a.kind!=='nine_slice';for(const key of Object.keys(labels)){$('prop-'+key).value=a[key];}
   for(const el of document.querySelectorAll('.numeric-item'))el.hidden=a.kind==='normal'&&['left','right','top','bottom'].includes(el.dataset.key);
 }
@@ -738,7 +767,7 @@ function applyProps(){const a=state.project.active;if(!a||state.busy)return;cons
   catch(e){errorMessage(e);}}
 let previousPreviewKey=null;
 function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('preview'),a=state.project.active,container=canvas.parentElement;
-  const previewKey=[state.imageSeq,state.project.revision,state.project.selected,settings.explodeNine,container.clientWidth,container.clientHeight].join(':');
+  const previewKey=[state.imageSeq,state.project.revision,state.project.selected,settings.explodeNine,container.clientWidth,container.clientHeight,JSON.stringify(state.transparencyDraft?.scope==='crop'?state.transparencyDraft.config:null)].join(':');
   if(previousPreviewKey===previewKey)return;
   previousPreviewKey=previewKey;
   if(!a||!state.image){$('preview-label').textContent='Select a crop first';canvas.width=1;canvas.height=1;return;}
@@ -746,7 +775,7 @@ function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('
   const sw=a.w+2*gap,sh=a.h+2*gap,ratio=Math.min(1,340/sw,Math.max(130,container.clientHeight-25)/sh);
   canvas.width=Math.max(1,Math.round(sw*ratio));canvas.height=Math.max(1,Math.round(sh*ratio));
   const pc=canvas.getContext('2d');pc.imageSmoothingEnabled=false;pc.clearRect(0,0,canvas.width,canvas.height);
-  const processed=transparencyPreview();
+  const processed=transparencyPreview('crop');
   if(exploded){for(const piece of nineParts(a)){if(piece.w<1||piece.h<1)continue;
     const dx=(piece.x+piece.col*gap)*ratio,dy=(piece.y+piece.row*gap)*ratio;
     if(processed){const sx=piece.x*processed.width/a.w,sy=piece.y*processed.height/a.h;
@@ -1210,11 +1239,19 @@ function bind(){
   $('new-from-list').addEventListener('click',()=>{closeTab();chooseMode('new');toast('Drag on the image to define a crop.');});
   $('rename').addEventListener('click',renameSelected);$('delete').addEventListener('click',deleteSelected);
   $('apply-props').addEventListener('click',applyProps);
-  $('transparency-pick').addEventListener('click',()=>{if(!state.image)return;chooseMode('pick-bg');closeTab();toast('Tap a background colour on the image');});
-  $('transparency-tolerance').addEventListener('input',e=>{const t=transparencyConfig();state.transparencyDraft={...t,tolerance:Number(e.target.value)};
-    $('transparency-value').textContent=e.target.value;state.transparencyPreview=null;scheduleDraw();});
-  $('transparency-tolerance').addEventListener('change',e=>updateTransparency({...transparencyConfig(),tolerance:Number(e.target.value)}));
-  $('transparency-all').addEventListener('change',e=>updateTransparency({...transparencyConfig(),all:e.target.checked}));
+  for(const scope of ['image','crop']){
+    $('transparency-'+scope+'-pick').addEventListener('click',()=>{
+      if(!state.image||scope==='crop'&&!state.project.active)return;
+      state.transparencyPickScope=scope;chooseMode('pick-bg');closeTab();toast('Tap a background colour on the image');
+    });
+    $('transparency-'+scope+'-tolerance').addEventListener('input',e=>{
+      state.transparencyDraft={scope,config:{...transparencyConfig(scope),tolerance:Number(e.target.value)}};
+      $('transparency-'+scope+'-value').textContent=e.target.value;
+      transparencyCache.clear();previousPreviewKey=null;scheduleDraw();schedulePreview();
+    });
+    $('transparency-'+scope+'-tolerance').addEventListener('change',e=>updateTransparency({...transparencyConfig(scope),tolerance:Number(e.target.value)},scope));
+    $('transparency-'+scope+'-all').addEventListener('change',e=>updateTransparency({...transparencyConfig(scope),all:e.target.checked},scope));
+  }
   $('choose-folder').addEventListener('click',chooseFolder);
   $('create-project').addEventListener('click',createNewProject);
   $('rename-project').addEventListener('click',renameCurrentProject);

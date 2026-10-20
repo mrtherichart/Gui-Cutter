@@ -60,3 +60,17 @@ test('drawer direction and cancellation behavior are shared instead of edge-spec
  assert.match(app,/attachDrawerGestures\(\$\('app-edge-swipe'\),'app'\)/);
  assert.doesNotMatch(app,/startP>.5\?1:0/);
 });
+
+
+test('transparency controls remain in existing drawers without another tool mode',()=>{
+ assert.match(html,/<button data-tab="preview">Transparency<\/button>/);
+ const inspector=html.split('id="tab-properties"')[1].split('id="tab-preview"')[0];
+ assert.doesNotMatch(inspector,/id="transparency-crop"/);
+ const workspace=html.split('id="tab-files"')[1].split('id="tab-settings"')[0];
+ assert.match(workspace,/id="transparency-image"/);
+ const preview=html.split('id="tab-preview"')[1].split('id="magnifier"')[0];
+ assert.match(preview,/id="preview"/);
+ assert.match(preview,/id="transparency-crop"/);
+ assert.match(app,/ctx\.clip\('evenodd'\)/);
+ assert.doesNotMatch(app,/ctx\.clearRect\(tl\.x,tl\.y,rw,rh\)/);
+});

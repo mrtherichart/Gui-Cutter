@@ -104,6 +104,18 @@
               <button id="reload-project">Reload</button>
             </div>
           </div>
+          <details id="transparency-image" class="section-card transparency-section">
+            <summary>Image transparency</summary>
+            <div class="transparency-body">
+              <div id="transparency-image-colors" class="transparency-colors"></div>
+              <div class="action-row"><button id="transparency-image-pick" type="button">Pick colour from image</button></div>
+              <label class="transparency-range">Tolerance <output id="transparency-image-value">20</output>
+                <input type="range" id="transparency-image-tolerance" min="0" max="100" value="20" aria-label="Background colour tolerance">
+              </label>
+              <label class="switch"><span>All matching colours<small>Also remove matching areas inside shapes</small></span><input type="checkbox" id="transparency-image-all"></label>
+              <p class="hint" id="transparency-image-hint">Live preview on the canvas; pinch to zoom.</p>
+            </div>
+          </details>
           <div class="section-heading" id="project-library-heading"><span>Your projects</span><button class="plain-refresh" id="refresh-project-list" title="Refresh project list" aria-label="Refresh project list">↻</button></div>
           <div id="project-list" class="project-list"><p class="hint">Select a work folder in Preferences to see your projects.</p></div>
           <div class="section-heading"><span>Project files</span><button id="inspect-files" class="plain-refresh" type="button" aria-label="Refresh project files" title="Refresh project files">↻</button></div>
@@ -168,25 +180,13 @@
     <aside id="drawer" class="drawer bottom-drawer" aria-label="Editor details" aria-hidden="true">
       <div id="sheet-grip" class="sheet-grip" role="button" tabindex="0" aria-label="Swipe down to dismiss inspector"><span></span></div>
       <header class="panel-header sheet-header"><div class="panel-heading"><span class="overline">PRECISION WORKSPACE</span><h2>Selection</h2></div><button id="close-drawer" class="panel-close" aria-label="Close details"><svg class="ico" aria-hidden="true"><use href="#i-close"></use></svg></button></header>
-      <nav class="sheet-tabs" aria-label="Editor panels"><button data-tab="assets">Assets</button><button data-tab="properties">Inspector</button><button data-tab="preview">Preview</button></nav>
+      <nav class="sheet-tabs" aria-label="Editor panels"><button data-tab="assets">Assets</button><button data-tab="properties">Inspector</button><button data-tab="preview">Transparency</button></nav>
       <div class="sheet-content">
         <section id="tab-assets" class="tab-pane" aria-label="Cropped assets">
           <div class="section-heading first-heading asset-heading"><span>Asset library</span><button id="toggle-asset-view" class="asset-view-toggle" aria-label="Show grid view" aria-pressed="false" title="Switch to grid view"><svg class="ico" aria-hidden="true"><use href="#i-assets"></use></svg></button></div><div id="asset-list" class="asset-list view-list"></div>
           <div class="action-row sticky-actions"><button id="new-from-list" class="primary">New crop</button><button id="rename">Rename</button><button id="delete" class="danger">Delete</button></div>
         </section>
         <section id="tab-properties" class="tab-pane" hidden aria-label="Inspector">
-          <details id="transparency-section" class="section-card transparency-section">
-            <summary>Transparency <span id="transparency-scope">Entire image</span></summary>
-            <div class="transparency-body">
-              <div id="transparency-colors" class="transparency-colors"></div>
-              <div class="action-row"><button id="transparency-pick" type="button">Pick colour from image</button></div>
-              <label class="transparency-range">Tolerance <output id="transparency-value">20</output>
-                <input type="range" id="transparency-tolerance" min="0" max="100" value="20" aria-label="Background colour tolerance">
-              </label>
-              <label class="switch"><span>All matching colours<small>Also remove matching areas inside shapes</small></span><input type="checkbox" id="transparency-all"></label>
-              <p class="hint" id="transparency-hint">Live preview on the main canvas; pinch to zoom.</p>
-            </div>
-          </details>
           <p id="props-none" class="sheet-placeholder">Select an asset from the canvas to inspect its geometry.</p>
           <div id="props-fields">
             <div class="section-card"><div class="section-heading inside-heading"><span>Identity</span><span class="overline">ASSET</span></div><label class="field"><span>Name</span><input id="prop-name" type="text" maxlength="120" autocapitalize="off" spellcheck="false"></label><label class="field"><span>Crop type</span><select id="prop-kind"><option value="normal">Normal crop</option><option value="nine_slice">Nine-slice</option></select></label></div>
@@ -195,8 +195,21 @@
             <button id="apply-props" class="primary apply-button">Apply changes</button>
           </div>
         </section>
-        <section id="tab-preview" class="tab-pane" hidden aria-label="Asset preview">
-          <div class="section-heading first-heading"><span>Pixel preview</span><span class="overline">1:1 SOURCE EXPORT</span></div><div class="preview-box"><canvas id="preview"></canvas></div><div id="preview-label" class="preview-caption">Select an asset</div><div class="section-card"><label class="switch"><span>Exploded nine-slice<small>Display all nine sections independently</small></span><input id="explode-preview" type="checkbox"></label></div><p class="hint">The export is always a single PNG. Nine-slice margins are saved in <code>ui_slices.json</code>.</p>
+        <section id="tab-preview" class="tab-pane" hidden aria-label="Asset transparency">
+          <div class="section-heading first-heading"><span>Transparency preview</span><span class="overline">1:1 SOURCE EXPORT</span></div><div class="preview-box"><canvas id="preview"></canvas></div><div id="preview-label" class="preview-caption">Select an asset</div>
+          <details open id="transparency-crop" class="section-card transparency-section">
+            <summary>Crop transparency</summary>
+            <div class="transparency-body">
+              <div id="transparency-crop-colors" class="transparency-colors"></div>
+              <div class="action-row"><button id="transparency-crop-pick" type="button">Pick colour from image</button></div>
+              <label class="transparency-range">Tolerance <output id="transparency-crop-value">20</output>
+                <input type="range" id="transparency-crop-tolerance" min="0" max="100" value="20" aria-label="Background colour tolerance">
+              </label>
+              <label class="switch"><span>All matching colours<small>Also remove matching areas inside shapes</small></span><input type="checkbox" id="transparency-crop-all"></label>
+              <p class="hint" id="transparency-crop-hint">Live preview on the main canvas; pinch to zoom.</p>
+            </div>
+          </details>
+<div class="section-card"><label class="switch"><span>Exploded nine-slice<small>Display all nine sections independently</small></span><input id="explode-preview" type="checkbox"></label></div><p class="hint">The export is always a single PNG. Nine-slice margins are saved in <code>ui_slices.json</code>.</p>
         </section>
       </div>
     </aside>

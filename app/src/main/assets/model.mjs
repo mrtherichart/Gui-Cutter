@@ -83,8 +83,8 @@ export class Project {
   markSaved() { this.saved=this.encode(); }
   insert(a) { const next=verifyAssets([...this.assets,a],this.imageWidth,this.imageHeight);this.assets=next;this.selected=next.length-1;this.commit(); }
   update(index,changes) { const next=copy(this.assets);next[index]=normalizeAsset({...next[index],...changes},this.imageWidth,this.imageHeight);this.assets=verifyAssets(next,this.imageWidth,this.imageHeight);this.commit(); }
-  setTransparency(value) {const t=normalizeTransparency(value);
-    if(this.active)this.assets[this.selected].transparency=t;
+  setTransparency(value, scope=this.active?'crop':'image') {const t=normalizeTransparency(value);
+    if(scope==='crop' && this.active)this.assets[this.selected].transparency=t;
     else this.transparency=t;
     this.commit();
   }

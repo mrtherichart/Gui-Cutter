@@ -60,3 +60,27 @@ test('normalization rejects malformed or repeated keys and bounds tolerance',()=
   const t=normalizeTransparency({colors:['#aabbcc','#AABBCC','#short','FFFFFF','#123456'],tolerance:200});
   assert.deepEqual(t.colors,['#AABBCC','#123456']);assert.equal(t.tolerance,100);
 });
+
+
+test('image-wide colours can be edited even while a crop is selected',()=>{
+  const p=new Project();p.imageWidth=30;p.imageHeight=30;
+  p.load({image_path:'base.png',assets:[{asset_id:'dialog',kind:'normal',x:2,y:3,w:15,h:12}]});
+  p.selected=0;
+  p.setTransparency({colors:['#FFFFFF'],tolerance:10},'image');
+  assert.equal(p.transparency.colors[0],'#FFFFFF');
+  assert.equal(p.active.transparency,undefined);
+  p.setTransparency({colors:['#00FF00'],tolerance:3},'crop');
+  assert.equal(p.transparency.colors[0],'#FFFFFF');
+  assert.equal(p.active.transparency.colors[0],'#00FF00');
+  p.undo();
+  assert.equal(p.active.transparency,undefined);
+  assert.equal(p.transparency.colors[0],'#FFFFFF');
+});
+
+test('opacity correction leaves fully opaque foreground pixels unchanged',()=>{
+  const im=picture(15,15,[255,255,255]);
+  for(let y=2;y<13;y++)for(let x=2;x<13;x++)dot(im,x,y,[14,60,120]);
+  const original=pixel(im,7,7);
+  applyTransparency(im,{colors:['#FFFFFF'],tolerance:20});
+  assert.deepEqual(pixel(im,7,7),original);
+});

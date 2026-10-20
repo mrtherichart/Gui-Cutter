@@ -699,7 +699,7 @@ body[data-open-drawer="app"] .app-edge-swipe,body[data-open-drawer="sheet"] .app
   .selection-strip.precision-active{padding-inline:4px;}
 }
 
-/* Inspector transparency uses existing panels and field styling. */
+/* Shared transparency controls in the Workspace and Transparency drawers. */
 .transparency-section summary{cursor:pointer;font-size:13px;font-weight:650;display:flex;align-items:center;justify-content:space-between;gap:10px;list-style-position:inside;}
 .transparency-section summary span{font-size:11px;color:var(--caption-ink);font-weight:400;}
 .transparency-body{padding-top:12px;}
