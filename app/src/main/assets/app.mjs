@@ -1,4 +1,5 @@
 import {applyTransparency,normalizeTransparency} from './transparency.mjs';
+import {cleanAlphaEdge} from './edge-cleanup.mjs';
 import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} from './model.mjs';
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
@@ -102,13 +103,18 @@ function applyAppearance(){
   }
 }
 function saveSettings(){localStorage.setItem(settingsKey,JSON.stringify(settings));if(!settings.magnifier)hideMagnifier();applyAppearance();for(const el of document.querySelectorAll('[data-setting]'))el.checked=!!settings[el.dataset.setting];$('setting-kind').value=settings.newKind;$('setting-theme').value=settings.theme;$('explode-preview').checked=settings.explodeNine;updateButtons();updatePreviewBackground();scheduleDraw();}
+function processTransparencyPixels(pixels,t){
+  if(t.colors?.length)applyTransparency(pixels,t);
+  if(t.edgeCleanup)cleanAlphaEdge(pixels,t.edgeCleanup);
+  return pixels;
+}
 function drawSelectionThumb(asset){
   const canvas=$('selection-thumb');if(!state.image||!asset)return;
   const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.imageSmoothingEnabled=false;
   const scale=Math.min(canvas.width/asset.w,canvas.height/asset.h);
   const w=asset.w*scale,h=asset.h*scale;
   c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(canvas.width-w)/2,(canvas.height-h)/2,w,h);
-  const t=state.project.effectiveTransparency(asset);if(t.colors.length){const pixels=c.getImageData(0,0,canvas.width,canvas.height);applyTransparency(pixels,t);c.putImageData(pixels,0,0);}
+  const t=state.project.effectiveTransparency(asset);if(t.colors.length||t.edgeCleanup){const pixels=c.getImageData(0,0,canvas.width,canvas.height);processTransparencyPixels(pixels,t);c.putImageData(pixels,0,0);}
 }
 function scheduleDraft(){clearTimeout(state.draftTimer);state.draftTimer=setTimeout(()=>{
   if(state.project.dirty){const key='gui-cutter.draft.'+state.projectKey;
@@ -471,7 +477,7 @@ function transparencyPreview(scope='crop', asset=state.project.active){
   if(!imageScope&&['move','handle'].includes(state.gesture))return null;
   const draft=state.transparencyDraft;
   const t=draft?.scope===scope&&(imageScope||a===state.project.active) ? draft.config : (imageScope?normalizeTransparency(state.project.transparency):state.project.effectiveTransparency(a));
-  if(!t.colors.length)return null;
+  if(!t.colors.length&&!t.edgeCleanup)return null;
   const r=a??{x:0,y:0,w:state.image.naturalWidth,h:state.image.naturalHeight};
   const key=[scope,state.imageSeq,state.project.revision,a?.asset_id??'',r.x,r.y,r.w,r.h,JSON.stringify(t)].join(':');
   if(transparencyCache.has(key))return transparencyCache.get(key);
@@ -481,7 +487,7 @@ function transparencyPreview(scope='crop', asset=state.project.active){
   const c=document.createElement('canvas');c.width=Math.max(1,Math.round(r.w*scale));c.height=Math.max(1,Math.round(r.h*scale));
   const cx=c.getContext('2d',{willReadFrequently:true});cx.imageSmoothingEnabled=false;
   cx.drawImage(state.image,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
-  try{const pixels=cx.getImageData(0,0,c.width,c.height);applyTransparency(pixels,t);cx.putImageData(pixels,0,0);}
+  try{const pixels=cx.getImageData(0,0,c.width,c.height);processTransparencyPixels(pixels,t);cx.putImageData(pixels,0,0);}
   catch(e){errorMessage(e);return null;}
   if(transparencyCache.size>=8)transparencyCache.clear();
   transparencyCache.set(key,c);return c;
@@ -511,6 +517,8 @@ function renderTransparency(scope){
   $('transparency-'+scope+'-tolerance').value=String(t.tolerance);
   $('transparency-'+scope+'-value').textContent=String(t.tolerance);
   $('transparency-'+scope+'-all').checked=t.all;
+  $('transparency-'+scope+'-edge').value=String(t.edgeCleanup??0);
+  $('transparency-'+scope+'-edge-value').textContent=String(t.edgeCleanup??0);
   $('transparency-'+scope+'-pick').disabled=!state.image||state.busy||scope==='crop'&&!state.project.active;
   const a=scope==='crop' ? state.project.active : null;
   const r=a??(state.image&&{w:state.image.naturalWidth,h:state.image.naturalHeight});
@@ -714,7 +722,7 @@ function cropThumbnail(asset){
     const scale=Math.min(96/asset.w,72/asset.h);
     const w=asset.w*scale,h=asset.h*scale;
     c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(96-w)/2,(72-h)/2,w,h);
-    const t=state.project.effectiveTransparency(asset);if(t.colors.length){const px=c.getImageData(0,0,96,72);applyTransparency(px,t);c.putImageData(px,0,0);}
+    const t=state.project.effectiveTransparency(asset);if(t.colors.length||t.edgeCleanup){const px=c.getImageData(0,0,96,72);processTransparencyPixels(px,t);c.putImageData(px,0,0);}
   }
   assetThumbnails.set(key,canvas);
   return canvas;
@@ -1142,7 +1150,7 @@ async function saveProject(){if(!state.image||state.busy)return;
   if(native){state.pendingSave=state.project.encode();state.busy=true;updateButtons();const json=JSON.stringify(state.project.manifest());if(!nativeCall('saveProject',json)){state.busy=false;state.pendingSave=null;updateButtons();}return;}
   // Browser fallback: PNG and JSON downloads, still the same crop geometry as the Android exporter.
   try{for(const asset of state.project.assets){const c=document.createElement('canvas');c.width=asset.w;c.height=asset.h;const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,0,0,asset.w,asset.h);
-      const t=state.project.effectiveTransparency(asset);if(t.colors.length){const data=cx.getImageData(0,0,asset.w,asset.h);applyTransparency(data,t);cx.putImageData(data,0,0);}
+      const t=state.project.effectiveTransparency(asset);if(t.colors.length||t.edgeCleanup){const data=cx.getImageData(0,0,asset.w,asset.h);processTransparencyPixels(data,t);cx.putImageData(data,0,0);}
       const blob=await new Promise(resolve=>c.toBlob(resolve,'image/png'));if(blob)browserDownload(filenameFor(asset.asset_id),blob);}
     browserDownload('ui_slices.json',new Blob([JSON.stringify(state.project.manifest(),null,2)],{type:'application/json'}));
     state.project.markSaved();clearDraft();refreshUI();toast('Downloaded crops and manifest. Browser test mode.');}
@@ -1267,6 +1275,12 @@ function bind(){
     });
     $('transparency-'+scope+'-tolerance').addEventListener('change',e=>updateTransparency({...transparencyConfig(scope),tolerance:Number(e.target.value)},scope));
     $('transparency-'+scope+'-all').addEventListener('change',e=>updateTransparency({...transparencyConfig(scope),all:e.target.checked},scope));
+    $('transparency-'+scope+'-edge').addEventListener('input',e=>{
+      state.transparencyDraft={scope,config:{...transparencyConfig(scope),edgeCleanup:Number(e.target.value)}};
+      $('transparency-'+scope+'-edge-value').textContent=e.target.value;
+      transparencyCache.clear();previousPreviewKey=null;scheduleDraw();schedulePreview();
+    });
+    $('transparency-'+scope+'-edge').addEventListener('change',e=>updateTransparency({...transparencyConfig(scope),edgeCleanup:Number(e.target.value)},scope));
   }
   $('choose-folder').addEventListener('click',chooseFolder);
   $('create-project').addEventListener('click',createNewProject);

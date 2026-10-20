@@ -144,3 +144,18 @@ edge-only decontamination and non-destructive per-image/per-crop JSON persist.
 This is a conservative improvement, not a general-purpose photo matting tool:
 heavily textured shadows and indistinguishable foreground/background pixels
 may still need image editing outside GUI Cutter.
+
+## v0.2.4 — separate edge cleanup
+
+Transparency now includes one **Edge cleanup** strength slider (0–100) in both the
+image-wide and selected-crop transparency controls. This is a separate, optional
+post-processing pass after background removal, not a second background selector.
+It subtly smooths the existing alpha boundary, attenuates exposed one-pixel
+protrusions, and pulls contaminated semitransparent edge colours slightly toward
+retained foreground pixels. It does not restore removed background or alter
+opaque interior pixels. Zero retains v0.2.3 output exactly.
+
+The optional `edgeCleanup` integer is stored alongside existing transparency
+colours/tolerance in project or per-crop JSON, with normal undo/redo, recovery,
+previews and native PNG export. The JS and Kotlin cleanup passes have been
+compared pixel-for-pixel on the supplied fantasy UI crop.

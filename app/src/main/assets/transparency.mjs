@@ -6,7 +6,8 @@ export function normalizeTransparency(value) {
   const colors=[...new Set((Array.isArray(value.colors)?value.colors:[])
     .filter(v=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v))
     .map(v=>v.toUpperCase()))].slice(0,24);
-  return {colors,tolerance:Math.max(0,Math.min(100,Math.round(Number.isFinite(Number(value.tolerance)) ? Number(value.tolerance) : 20))),all:value.all===true};
+  const edgeCleanup=Math.max(0,Math.min(100,Math.round(Number(value.edgeCleanup)||0)));
+  return {colors,tolerance:Math.max(0,Math.min(100,Math.round(Number.isFinite(Number(value.tolerance)) ? Number(value.tolerance) : 20))),all:value.all===true,...(edgeCleanup?{edgeCleanup}:{})};
 }
 export const hasTransparency = v=>!!v?.colors?.length;
 const rgb=hex=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));

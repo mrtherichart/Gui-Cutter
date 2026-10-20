@@ -113,6 +113,9 @@
                 <input type="range" id="transparency-image-tolerance" min="0" max="100" value="20" aria-label="Background colour tolerance">
               </label>
               <label class="switch"><span>All matching colours<small>Also remove matching areas inside shapes</small></span><input type="checkbox" id="transparency-image-all"></label>
+              <label class="transparency-range">Edge cleanup <output id="transparency-image-edge-value">0</output>
+                <input type="range" id="transparency-image-edge" min="0" max="100" value="0" aria-label="Edge cleanup strength">
+              </label>
               <p class="hint" id="transparency-image-hint">Live preview on the canvas; pinch to zoom.</p>
             </div>
           </details>
@@ -207,6 +210,9 @@
                 <input type="range" id="transparency-crop-tolerance" min="0" max="100" value="20" aria-label="Background colour tolerance">
               </label>
               <label class="switch"><span>All matching colours<small>Also remove matching areas inside shapes</small></span><input type="checkbox" id="transparency-crop-all"></label>
+              <label class="transparency-range">Edge cleanup <output id="transparency-crop-edge-value">0</output>
+                <input type="range" id="transparency-crop-edge" min="0" max="100" value="0" aria-label="Edge cleanup strength">
+              </label>
               <p class="hint" id="transparency-crop-hint">Live preview on the main canvas; pinch to zoom.</p>
             </div>
           </details>

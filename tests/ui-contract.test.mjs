@@ -82,3 +82,13 @@ test('transparency preview offers ten compact comparison backgrounds',()=>{
  assert.match(app,/previewBackgroundColors/);
  assert.match(css,/\.preview-background-choice/);
 });
+
+test('clean-edge control shares the existing transparency sections',()=>{
+ const html=readFileSync(new URL('../app/src/main/assets/index.html',import.meta.url),'utf8');
+ const js=readFileSync(new URL('../app/src/main/assets/app.mjs',import.meta.url),'utf8');
+ for(const scope of ['image','crop']){
+   assert.match(html,new RegExp(`id="transparency-${scope}-edge"`));
+   assert.match(html,new RegExp(`id="transparency-${scope}-edge-value"`));
+ }
+ assert.match(js,/cleanAlphaEdge\(pixels,t\.edgeCleanup\)/);
+});

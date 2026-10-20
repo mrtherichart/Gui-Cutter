@@ -216,11 +216,14 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
         try {
             for (a in crops) {
                 val crop = Bitmap.createBitmap(bitmap, a.x,a.y,a.w,a.h)
-                val processed = Transparency.apply(crop, a.transparency ?: input.optJSONObject("transparency"))
+                val config=a.transparency ?: input.optJSONObject("transparency")
+                val keyed=Transparency.apply(crop,config)
+                val processed=EdgeCleanup.apply(keyed,config?.optInt("edgeCleanup",0) ?: 0)
                 try { File(staging,a.name).outputStream().buffered().use { out ->
                     check(processed.compress(Bitmap.CompressFormat.PNG,100,out)) { "Failed to encode ${a.id}" }
                 } } finally {
-                    if (processed !== crop) processed.recycle()
+                    if (processed !== keyed) processed.recycle()
+                    if (keyed !== crop) keyed.recycle()
                     if (crop !== bitmap) crop.recycle()
                 }
             }

@@ -123,3 +123,61 @@ test('two picked background colours can cross hard checkerboard boundaries',()=>
   assert.equal(pixel(im,13,13)[3],0,'all four corners and inner cells removed');
   assert.equal(pixel(im,7,7)[3],255,'foreground still visible');
 });
+
+test('clean-edge defaults to disabled and is optional in legacy JSON', async()=>{
+  const {cleanAlphaEdge}=await import('../app/src/main/assets/edge-cleanup.mjs');
+  const data=picture(5,5,[155,74,28]);
+  const orig=[...data.data];
+  cleanAlphaEdge(data,0);
+  assert.deepEqual([...data.data],orig);
+  assert.deepEqual(normalizeTransparency({colors:['#abcdef'],tolerance:23}),{colors:['#ABCDEF'],tolerance:23,all:false});
+});
+
+test('edge cleanup only reduces existing alpha, without restoring erased background',async()=>{
+  const {cleanAlphaEdge}=await import('../app/src/main/assets/edge-cleanup.mjs');
+  const im=picture(9,9,[12,42,86]);
+  for(let y=0;y<9;y++)for(let x=0;x<9;x++)if(x<2||x>=7||y<2||y>=7)im.data[(y*9+x)*4+3]=0;
+  const oldAlpha=Array.from({length:81},(_,i)=>im.data[i*4+3]);
+  cleanAlphaEdge(im,75);
+  for(let i=0;i<81;i++)assert.ok(im.data[i*4+3]<=oldAlpha[i],`alpha unexpectedly grew at ${i}`);
+  assert.equal(pixel(im,4,4)[3],255,'opaque inner art remains exactly opaque');
+  assert.equal(pixel(im,0,0)[3],0,'transparent background remains empty');
+  assert.ok(pixel(im,2,4)[3]<255,'outer edge becomes antialiased');
+  assert.deepEqual(pixel(im,4,4).slice(0,3),[12,42,86],'interior RGB preserved');
+});
+
+test('edge cleanup suppresses stray sharp pixels more strongly at higher values',async()=>{
+  const {cleanAlphaEdge}=await import('../app/src/main/assets/edge-cleanup.mjs');
+  const make=()=>{const im=picture(9,9,[0,0,0]);im.data.fill(0);
+    for(let y=3;y<=5;y++)for(let x=3;x<=5;x++)dot(im,x,y,[40,60,100]);
+    dot(im,6,4,[40,60,100]);return im;};
+  const low=make(),high=make();cleanAlphaEdge(low,25);cleanAlphaEdge(high,100);
+  assert.ok(pixel(high,6,4)[3]<pixel(low,6,4)[3]);
+  assert.equal(pixel(high,4,4)[3],255);
+});
+
+test('edge cleanup gently decontaminates partially transparent fringe RGB',async()=>{
+  const {cleanAlphaEdge}=await import('../app/src/main/assets/edge-cleanup.mjs');
+  const im=picture(9,9,[20,32,62]);
+  for(let y=0;y<9;y++)for(let x=0;x<9;x++)if(x<3||y<2||y>6)im.data[(y*9+x)*4+3]=0;
+  for(let y=2;y<=6;y++)im.data.set([110,120,128,128],(y*9+3)*4);
+  cleanAlphaEdge(im,100);
+  const repaired=pixel(im,3,4);
+  assert.ok(repaired[0]<110&&repaired[1]<120&&repaired[2]<128,`${repaired}`);
+  assert.ok(repaired[3]<=128);
+  assert.deepEqual(pixel(im,6,4),[20,32,62,255]);
+});
+
+test('edge cleanup setting survives project/crop moves, JSON and undo',()=>{
+  const p=new Project();p.imageWidth=100;p.imageHeight=100;
+  p.load({assets:[{asset_id:'Panel',kind:'normal',x:5,y:6,w:20,h:18}]});
+  p.setTransparency({colors:['#6D6D69'],tolerance:20,edgeCleanup:42},'image');
+  assert.equal(p.manifest().transparency.edgeCleanup,42);
+  p.selected=0;p.setTransparency({colors:['#6D6D69'],tolerance:20,edgeCleanup:77},'crop');
+  p.update(0,{x:12});
+  assert.equal(p.active.transparency.edgeCleanup,77);
+  const saved=p.manifest(),reopened=new Project();reopened.imageWidth=100;reopened.imageHeight=100;reopened.load(saved);
+  assert.equal(reopened.assets[0].transparency.edgeCleanup,77);
+  assert.equal(reopened.transparency.edgeCleanup,42);
+  p.undo();p.undo();assert.equal(p.active.transparency,undefined);
+});
