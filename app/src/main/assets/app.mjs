@@ -1,3 +1,4 @@
+import {applyTransparency,normalizeTransparency} from './transparency.mjs';
 import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} from './model.mjs';
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
@@ -27,6 +28,7 @@ const tintChoices={
 };
 if(!tintChoices[settings.gizmoTint])settings.gizmoTint='champagne';
 const state={project:new Project(),view:new Viewport(),image:null,edges:null,overlay:null,mode:'edit',pointers:new Map(),gesture:null,gestureData:null,previewRect:null,snapPoint:null,busy:false,tab:'assets',projectKey:'browser',nativeInfo:null,toastTimer:0,draftTimer:0,imageSeq:0,nudge:1,canvasDpr:1,lastStatus:'Ready',imageLoaded:false,pendingSave:null,lastNavigationTap:null,lastTemplateAsset:null};
+state.transparencyPreview=null;state.transparencyDraft=null;
 state.alignGuides=[];state.snapMemory='';state.lastSnapAt=0;state.focusEpoch=0;
 const ctx=$('editor').getContext('2d');
 const appCtx=()=>({iw:state.image?.naturalWidth||0,ih:state.image?.naturalHeight||0});
@@ -106,10 +108,11 @@ function drawSelectionThumb(asset){
   const scale=Math.min(canvas.width/asset.w,canvas.height/asset.h);
   const w=asset.w*scale,h=asset.h*scale;
   c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(canvas.width-w)/2,(canvas.height-h)/2,w,h);
+  const t=state.project.effectiveTransparency(asset);if(t.colors.length){const pixels=c.getImageData(0,0,canvas.width,canvas.height);applyTransparency(pixels,t);c.putImageData(pixels,0,0);}
 }
 function scheduleDraft(){clearTimeout(state.draftTimer);state.draftTimer=setTimeout(()=>{
   if(state.project.dirty){const key='gui-cutter.draft.'+state.projectKey;
-    try{localStorage.setItem(key,JSON.stringify({iw:state.project.imageWidth,ih:state.project.imageHeight,assets:state.project.assets,date:Date.now()}));}
+    try{localStorage.setItem(key,JSON.stringify({iw:state.project.imageWidth,ih:state.project.imageHeight,assets:state.project.assets,transparency:state.project.transparency,date:Date.now()}));}
     catch(e){log('Recovery snapshot unavailable',e.message);}}
   else clearDraft();
 },300);}
@@ -442,6 +445,57 @@ function createModal({title,initial='',message='',question=false}){
   });
 }
 
+
+// Reuse the full workspace as a pinch-zoomable live preview; only an optional
+// crop-level override is processed when a crop is selected.
+function transparencyPreview(){
+  if(!state.image||['move','handle'].includes(state.gesture))return null;
+  const a=state.project.active,t=state.transparencyDraft??state.project.effectiveTransparency(a);
+  if(!t.colors.length)return null;
+  const r=a??{x:0,y:0,w:state.image.naturalWidth,h:state.image.naturalHeight};
+  const key=[state.imageSeq,state.project.revision,state.project.selected,r.x,r.y,r.w,r.h,JSON.stringify(t)].join(':');
+  if(state.transparencyPreview?.key===key)return state.transparencyPreview.canvas;
+  // Limit UI preview memory for large sheets; exports always work at full resolution.
+  const scale=Math.min(1,Math.sqrt(1_200_000/(r.w*r.h)));
+  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(r.w*scale));c.height=Math.max(1,Math.round(r.h*scale));
+  const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(state.image,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
+  try{const pixels=cx.getImageData(0,0,c.width,c.height);applyTransparency(pixels,t);cx.putImageData(pixels,0,0);}
+  catch(e){errorMessage(e);return null;}
+  state.transparencyPreview={key,canvas:c};return c;
+}
+function transparencyConfig(){return normalizeTransparency(state.project.effectiveTransparency());}
+function updateTransparency(config){if(state.busy)return;state.transparencyDraft=null;state.transparencyPreview=null;
+  state.project.setTransparency(config);refreshUI();scheduleDraft();}
+function renderTransparency(){
+  const a=state.project.active,t=state.transparencyDraft??transparencyConfig();
+  $('transparency-scope').textContent=a?a.asset_id:'Entire image';
+  const list=$('transparency-colors');list.replaceChildren();
+  if(!t.colors.length){const hint=document.createElement('span');hint.className='hint';hint.textContent='No colours picked';list.append(hint);}
+  for(const color of t.colors){const tag=document.createElement('span');tag.className='transparency-swatch';
+    const swatch=document.createElement('i');swatch.style.backgroundColor=color;
+    const label=document.createElement('span');label.textContent=color;
+    const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='Remove '+color;remove.setAttribute('aria-label','Remove '+color);
+    remove.addEventListener('click',()=>updateTransparency({...t,colors:t.colors.filter(v=>v!==color)}));
+    tag.append(swatch,label,remove);list.append(tag);
+  }
+  $('transparency-tolerance').value=String(t.tolerance);$('transparency-value').textContent=String(t.tolerance);
+  $('transparency-all').checked=t.all;
+  $('transparency-pick').disabled=!state.image||state.busy;
+  const r=a??(state.image&&{w:state.image.naturalWidth,h:state.image.naturalHeight});
+  $('transparency-hint').textContent=r&&r.w*r.h>1_200_000?'Main canvas preview is reduced for large images; PNGs export at full resolution.':'Live preview on the main canvas; pinch to zoom.';
+}
+function pickTransparencyColor(screen){
+  if(!state.image)return;
+  const pt=state.view.toImage(screen.x,screen.y),x=Math.floor(pt.x),y=Math.floor(pt.y);
+  if(x<0||y<0||x>=state.image.naturalWidth||y>=state.image.naturalHeight){toast('Pick a colour inside the image');return;}
+  const c=document.createElement('canvas');c.width=c.height=1;
+  const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(state.image,x,y,1,1,0,0,1,1);
+  const px=cx.getImageData(0,0,1,1).data;
+  const hex='#'+[px[0],px[1],px[2]].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();
+  const t=transparencyConfig();if(!t.colors.includes(hex))updateTransparency({...t,colors:[...t.colors,hex]});
+  chooseMode('edit');openTab('properties');toast('Added '+hex);
+}
+
 function redraw(){
   const cvs=$('editor'),w=cvs.clientWidth,h=cvs.clientHeight,dpr=state.canvasDpr;
   if(!w||!h)return;
@@ -462,6 +516,20 @@ function redraw(){
   if(source){
     const {sx,sy,sw,sh,dx,dy,dw,dh}=source;
     ctx.drawImage(im,sx,sy,sw,sh,dx,dy,dw,dh);
+    const preview=transparencyPreview();
+    if(preview){
+      const a=state.project.active,r=a??{x:0,y:0,w:iw,h:ih};
+      const tl=v.toScreen(r.x,r.y),rw=r.w*v.scale,rh=r.h*v.scale;
+      ctx.clearRect(tl.x,tl.y,rw,rh);
+      ctx.save();ctx.beginPath();ctx.rect(tl.x,tl.y,rw,rh);ctx.clip();
+      ctx.fillStyle='#f4f4f4';ctx.fillRect(tl.x,tl.y,rw,rh);
+      if(settings.checkerboard){ctx.fillStyle='#d8dadd';const tile=Math.max(2,12*v.scale);
+        if(tile>=2){const i0=Math.max(0,Math.floor((0-tl.x)/tile)),i1=Math.min(1000,Math.ceil((w-tl.x)/tile));
+          const j0=Math.max(0,Math.floor((0-tl.y)/tile)),j1=Math.min(1000,Math.ceil((h-tl.y)/tile));
+          for(let j=j0;j<j1;j++)for(let i=i0;i<i1;i++)if((i+j)%2===0)ctx.fillRect(tl.x+i*tile,tl.y+j*tile,tile,tile);
+        }}
+      ctx.imageSmoothingEnabled=false;ctx.drawImage(preview,tl.x,tl.y,rw,rh);ctx.restore();
+    }
     if(settings.showEdges&&state.overlay)ctx.drawImage(state.overlay,sx,sy,sw,sh,dx,dy,dw,dh);
   }
   for(let i=0;i<state.project.assets.length;i++){
@@ -549,7 +617,7 @@ async function openImageElement(src,loadManifest=true){
     if(seq!==state.imageSeq)return;
     state.image=image;state.imageLoaded=true;
     state.project.imageWidth=image.naturalWidth;state.project.imageHeight=image.naturalHeight;
-    state.edges=null;state.overlay=null;state.lastTemplateAsset=null;assetThumbnails.clear();$('empty').hidden=true;
+    state.edges=null;state.overlay=null;state.lastTemplateAsset=null;state.transparencyPreview=null;state.transparencyDraft=null;assetThumbnails.clear();$('empty').hidden=true;
     if(loadManifest&&native){try{const json=native.readManifest();state.project.load(json?JSON.parse(json):{assets:[]});}
       catch(e){state.project.reset([]);errorMessage('Could not load manifest: '+e.message);}}
     else state.project.reset([]);
@@ -564,11 +632,11 @@ async function recoverDraft(seq){
   try{const entry=localStorage.getItem('gui-cutter.draft.'+projectKey);if(!entry)return;
     const draft=JSON.parse(entry),p=state.project;
     if(draft.iw!==p.imageWidth||draft.ih!==p.imageHeight)return;
-    if(JSON.stringify({assets:draft.assets})===p.encode()){clearDraft();return;}
+    if(JSON.stringify({assets:draft.assets,transparency:draft.transparency??null})===p.encode()){clearDraft();return;}
     const yes=await createModal({title:'Recover unfinished edits?',message:'A local recovery snapshot contains edits not in the saved project. Restore it?',question:true});
     // A different project may have loaded while the recovery dialog was open.
     if(seq!==state.imageSeq||projectKey!==state.projectKey)return;
-    if(yes){p.assets=verifyAssets(draft.assets,p.imageWidth,p.imageHeight);p.commit();refreshUI();toast('Recovered edits; Save to write project files.');}
+    if(yes){p.assets=verifyAssets(draft.assets,p.imageWidth,p.imageHeight);p.transparency=draft.transparency?normalizeTransparency(draft.transparency):null;p.commit();refreshUI();toast('Recovered edits; Save to write project files.');}
     else clearDraft();
   }catch(e){log('Draft recovery failed',e.message);}
 }
@@ -594,7 +662,7 @@ const assetThumbnails=new BoundedCache(120);
 let lastAssetListKey=null;
 let lastAssetSelection=-1;
 function cropThumbnail(asset){
-  const key=[state.imageSeq,asset.x,asset.y,asset.w,asset.h].join(':');
+  const key=[state.imageSeq,state.project.revision,asset.x,asset.y,asset.w,asset.h].join(':');
   if(assetThumbnails.has(key))return assetThumbnails.get(key);
   const canvas=document.createElement('canvas');canvas.width=96;canvas.height=72;
   if(state.image){
@@ -602,6 +670,7 @@ function cropThumbnail(asset){
     const scale=Math.min(96/asset.w,72/asset.h);
     const w=asset.w*scale,h=asset.h*scale;
     c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(96-w)/2,(72-h)/2,w,h);
+    const t=state.project.effectiveTransparency(asset);if(t.colors.length){const px=c.getImageData(0,0,96,72);applyTransparency(px,t);c.putImageData(px,0,0);}
   }
   assetThumbnails.set(key,canvas);
   return canvas;
@@ -654,7 +723,7 @@ function createNumericControls(){for(const key of Object.keys(labels)){const out
     const input=document.createElement('input');input.type='number';input.step='1';input.id='prop-'+key;input.inputMode='numeric';
     const plus=document.createElement('button');plus.textContent='+';plus.type='button';plus.addEventListener('click',()=>nudgeField(key,1));
     row.append(minus,input,plus);outer.append(label,row);$(['left','top','right','bottom'].includes(key)?'margin-grid':'numeric-grid').append(outer);}}
-function renderProperties(){if(!bottomTabVisible('properties'))return;const a=state.project.active;$('props-none').hidden=!!a;$('props-fields').hidden=!a;if(!a)return;
+function renderProperties(){if(!bottomTabVisible('properties'))return;renderTransparency();const a=state.project.active;$('props-none').hidden=!!a;$('props-fields').hidden=!a;if(!a)return;
   $('prop-name').value=a.asset_id;$('prop-kind').value=a.kind;$('nine-card').hidden=a.kind!=='nine_slice';for(const key of Object.keys(labels)){$('prop-'+key).value=a[key];}
   for(const el of document.querySelectorAll('.numeric-item'))el.hidden=a.kind==='normal'&&['left','right','top','bottom'].includes(el.dataset.key);
 }
@@ -677,9 +746,13 @@ function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('
   const sw=a.w+2*gap,sh=a.h+2*gap,ratio=Math.min(1,340/sw,Math.max(130,container.clientHeight-25)/sh);
   canvas.width=Math.max(1,Math.round(sw*ratio));canvas.height=Math.max(1,Math.round(sh*ratio));
   const pc=canvas.getContext('2d');pc.imageSmoothingEnabled=false;pc.clearRect(0,0,canvas.width,canvas.height);
+  const processed=transparencyPreview();
   if(exploded){for(const piece of nineParts(a)){if(piece.w<1||piece.h<1)continue;
     const dx=(piece.x+piece.col*gap)*ratio,dy=(piece.y+piece.row*gap)*ratio;
-    pc.drawImage(state.image,a.x+piece.x,a.y+piece.y,piece.w,piece.h,dx,dy,piece.w*ratio,piece.h*ratio);}}
+    if(processed){const sx=piece.x*processed.width/a.w,sy=piece.y*processed.height/a.h;
+      pc.drawImage(processed,sx,sy,piece.w*processed.width/a.w,piece.h*processed.height/a.h,dx,dy,piece.w*ratio,piece.h*ratio);}
+    else pc.drawImage(state.image,a.x+piece.x,a.y+piece.y,piece.w,piece.h,dx,dy,piece.w*ratio,piece.h*ratio);}}
+  else if(processed)pc.drawImage(processed,0,0,canvas.width,canvas.height);
   else pc.drawImage(state.image,a.x,a.y,a.w,a.h,0,0,canvas.width,canvas.height);
   $('preview-label').textContent=`${a.asset_id} · ${a.w} × ${a.h}${exploded?' · exploded preview':''}`;
 }
@@ -728,6 +801,7 @@ function startSingle(p){if(!state.image||state.busy)return;const {iw,ih}=appCtx(
   const base={x:Math.round(limit(pt.x,0,iw)),y:Math.round(limit(pt.y,0,ih))};
   state.gestureData={screen:{x:p.x,y:p.y},anchor:base,before:state.project.snapshot(),selectedBefore:state.project.selected,start:null,index:state.project.selected};
   if(state.mode==='navigate'){state.gesture='pan';return;}
+  if(state.mode==='pick-bg'){state.gesture='pick-bg';return;}
   if(state.mode==='new'){
     state.gesture='draw';
     const g=state.gestureData;g.template=state.project.active?{...state.project.active}:(state.lastTemplateAsset?{...state.lastTemplateAsset}:null);g.dragged=false;
@@ -806,6 +880,7 @@ function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preven
     if(delta<12&&state.lastNavigationTap&&now-state.lastNavigationTap.time<330&&Math.hypot(e.clientX-state.lastNavigationTap.x,e.clientY-state.lastNavigationTap.y)<35){fitImage();state.lastNavigationTap=null;}
     else state.lastNavigationTap=delta<12?{x:e.clientX,y:e.clientY,time:now}:null;
   }else state.lastNavigationTap=null;
+  if(action==='pick-bg'&&g?.screen&&Math.hypot(e.clientX-g.screen.x,e.clientY-g.screen.y)<12)pickTransparencyColor({x:e.clientX,y:e.clientY});
   if(action==='draw'){
     if(g?.dragged)finishDraw(r);
     else if(g?.template)finishDraw(r,g.template);
@@ -1022,7 +1097,8 @@ async function saveProject(){if(!state.image||state.busy)return;
   try{state.project.assets=verifyAssets(state.project.assets,state.project.imageWidth,state.project.imageHeight);}catch(e){errorMessage(e);return;}
   if(native){state.pendingSave=state.project.encode();state.busy=true;updateButtons();const json=JSON.stringify(state.project.manifest());if(!nativeCall('saveProject',json)){state.busy=false;state.pendingSave=null;updateButtons();}return;}
   // Browser fallback: PNG and JSON downloads, still the same crop geometry as the Android exporter.
-  try{for(const asset of state.project.assets){const c=document.createElement('canvas');c.width=asset.w;c.height=asset.h;c.getContext('2d').drawImage(state.image,asset.x,asset.y,asset.w,asset.h,0,0,asset.w,asset.h);
+  try{for(const asset of state.project.assets){const c=document.createElement('canvas');c.width=asset.w;c.height=asset.h;const cx=c.getContext('2d',{willReadFrequently:true});cx.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,0,0,asset.w,asset.h);
+      const t=state.project.effectiveTransparency(asset);if(t.colors.length){const data=cx.getImageData(0,0,asset.w,asset.h);applyTransparency(data,t);cx.putImageData(data,0,0);}
       const blob=await new Promise(resolve=>c.toBlob(resolve,'image/png'));if(blob)browserDownload(filenameFor(asset.asset_id),blob);}
     browserDownload('ui_slices.json',new Blob([JSON.stringify(state.project.manifest(),null,2)],{type:'application/json'}));
     state.project.markSaved();clearDraft();refreshUI();toast('Downloaded crops and manifest. Browser test mode.');}
@@ -1080,6 +1156,7 @@ window.GuiCutterReceive=(type,data={})=>{
 window.GuiCutterHandleBack=()=>{
   const dlg=document.querySelector('dialog[open]');if(dlg){dlg.close('cancel');return true;}
   if(isAnyDrawerOpen()){closeTab();return true;}
+  if(state.mode==='pick-bg'){chooseMode('edit');return true;}
   if(!$('selection-precision').hidden){setNudgeOpen(false);return true;}
   if(document.body.classList.contains('clean')){cleanCanvas(false);return true;}
   return false;
@@ -1133,6 +1210,11 @@ function bind(){
   $('new-from-list').addEventListener('click',()=>{closeTab();chooseMode('new');toast('Drag on the image to define a crop.');});
   $('rename').addEventListener('click',renameSelected);$('delete').addEventListener('click',deleteSelected);
   $('apply-props').addEventListener('click',applyProps);
+  $('transparency-pick').addEventListener('click',()=>{if(!state.image)return;chooseMode('pick-bg');closeTab();toast('Tap a background colour on the image');});
+  $('transparency-tolerance').addEventListener('input',e=>{const t=transparencyConfig();state.transparencyDraft={...t,tolerance:Number(e.target.value)};
+    $('transparency-value').textContent=e.target.value;state.transparencyPreview=null;scheduleDraw();});
+  $('transparency-tolerance').addEventListener('change',e=>updateTransparency({...transparencyConfig(),tolerance:Number(e.target.value)}));
+  $('transparency-all').addEventListener('change',e=>updateTransparency({...transparencyConfig(),all:e.target.checked}));
   $('choose-folder').addEventListener('click',chooseFolder);
   $('create-project').addEventListener('click',createNewProject);
   $('rename-project').addEventListener('click',renameCurrentProject);

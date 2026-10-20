@@ -175,6 +175,18 @@
           <div class="action-row sticky-actions"><button id="new-from-list" class="primary">New crop</button><button id="rename">Rename</button><button id="delete" class="danger">Delete</button></div>
         </section>
         <section id="tab-properties" class="tab-pane" hidden aria-label="Inspector">
+          <details id="transparency-section" class="section-card transparency-section">
+            <summary>Transparency <span id="transparency-scope">Entire image</span></summary>
+            <div class="transparency-body">
+              <div id="transparency-colors" class="transparency-colors"></div>
+              <div class="action-row"><button id="transparency-pick" type="button">Pick colour from image</button></div>
+              <label class="transparency-range">Tolerance <output id="transparency-value">20</output>
+                <input type="range" id="transparency-tolerance" min="0" max="100" value="20" aria-label="Background colour tolerance">
+              </label>
+              <label class="switch"><span>All matching colours<small>Also remove matching areas inside shapes</small></span><input type="checkbox" id="transparency-all"></label>
+              <p class="hint" id="transparency-hint">Live preview on the main canvas; pinch to zoom.</p>
+            </div>
+          </details>
           <p id="props-none" class="sheet-placeholder">Select an asset from the canvas to inspect its geometry.</p>
           <div id="props-fields">
             <div class="section-card"><div class="section-heading inside-heading"><span>Identity</span><span class="overline">ASSET</span></div><label class="field"><span>Name</span><input id="prop-name" type="text" maxlength="120" autocapitalize="off" spellcheck="false"></label><label class="field"><span>Crop type</span><select id="prop-kind"><option value="normal">Normal crop</option><option value="nine_slice">Nine-slice</option></select></label></div>

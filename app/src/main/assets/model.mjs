@@ -1,3 +1,4 @@
+import {normalizeTransparency} from './transparency.mjs';
 export const MAX_HISTORY = 128;
 export const KINDS = ['normal', 'nine_slice'];
 const integer = (v) => Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : 0;
@@ -22,6 +23,7 @@ export function normalizeAsset(value, iw, ih) {
     a.x = Math.max(0, a.x); a.y = Math.max(0, a.y);
     a.w = Math.max(1, a.w); a.h = Math.max(1, a.h);
   }
+  if (value.transparency) a.transparency=normalizeTransparency(value.transparency);
   if (a.kind === 'normal') a.left = a.top = a.right = a.bottom = 0;
   a.left = Math.max(0, Math.min(a.w - 1, a.left));
   a.right = Math.max(0, Math.min(a.w - a.left - 1, a.right));
@@ -50,20 +52,22 @@ export function makeAsset(id, kind, x, y, w, h, iw, ih) {
 }
 export class Project {
   constructor() { this.assets=[]; this.selected=-1; this.imageWidth=0; this.imageHeight=0;
-    this.history=[]; this.cursor=-1; this.saved=''; this.revision=0; this.reset([]); }
-  encode() { return JSON.stringify({assets:this.assets}); }
-  manifest() { return {image_path:'base.png',assets:copy(this.assets)}; }
-  // Only committed edits count as unsaved; interactive drags commit at pointer release.
-  // This avoids serializing all assets on every animation frame.
+    this.transparency=null;this.history=[]; this.cursor=-1; this.saved=''; this.revision=0; this.reset([]); }
+  encode() { return JSON.stringify({assets:this.assets,transparency:this.transparency}); }
+  manifest() { const result={image_path:'base.png',assets:copy(this.assets)};
+    if(this.transparency)result.transparency=copy(this.transparency);
+    return result; }
   get dirty() { return this.history[this.cursor] !== this.saved; }
   get active() { return this.assets[this.selected] ?? null; }
-  reset(assets, saved=true) {
+  restoreState(value){const data=JSON.parse(value);this.assets=data.assets;this.transparency=data.transparency??null;}
+  reset(assets, saved=true, transparency=null) {
     this.assets=verifyAssets(assets,this.imageWidth,this.imageHeight);
+    this.transparency=transparency?normalizeTransparency(transparency):null;
     this.selected=-1; this.history=[this.encode()]; this.cursor=0;
-    this.saved=saved ? this.encode() : JSON.stringify({assets:[]});
+    this.saved=saved ? this.encode() : JSON.stringify({assets:[],transparency:null});
     this.revision++;
   }
-  load(data) { if (!data || !Array.isArray(data.assets)) throw new Error('Invalid ui_slices.json'); this.reset(data.assets); }
+  load(data) { if (!data || !Array.isArray(data.assets)) throw new Error('Invalid ui_slices.json'); this.reset(data.assets,true,data.transparency); }
   commit() {
     const value=this.encode();
     if (this.history[this.cursor] === value) return false;
@@ -74,12 +78,18 @@ export class Project {
     this.revision++;
     return true;
   }
-  undo() { if(this.cursor < 1)return false; this.assets=JSON.parse(this.history[--this.cursor]).assets; this.selected=Math.min(this.selected,this.assets.length-1); this.revision++; return true; }
-  redo() { if(this.cursor >= this.history.length-1)return false; this.assets=JSON.parse(this.history[++this.cursor]).assets; this.selected=Math.min(this.selected,this.assets.length-1); this.revision++; return true; }
+  undo() { if(this.cursor < 1)return false; this.restoreState(this.history[--this.cursor]); this.selected=Math.min(this.selected,this.assets.length-1); this.revision++; return true; }
+  redo() { if(this.cursor >= this.history.length-1)return false; this.restoreState(this.history[++this.cursor]); this.selected=Math.min(this.selected,this.assets.length-1); this.revision++; return true; }
   markSaved() { this.saved=this.encode(); }
   insert(a) { const next=verifyAssets([...this.assets,a],this.imageWidth,this.imageHeight);this.assets=next;this.selected=next.length-1;this.commit(); }
   update(index,changes) { const next=copy(this.assets);next[index]=normalizeAsset({...next[index],...changes},this.imageWidth,this.imageHeight);this.assets=verifyAssets(next,this.imageWidth,this.imageHeight);this.commit(); }
+  setTransparency(value) {const t=normalizeTransparency(value);
+    if(this.active)this.assets[this.selected].transparency=t;
+    else this.transparency=t;
+    this.commit();
+  }
+  effectiveTransparency(asset=this.active) { return asset?.transparency??this.transparency??normalizeTransparency(null); }
   deleteSelected() { if(!this.active)return;this.assets.splice(this.selected,1);this.selected=-1;this.commit(); }
   snapshot() { return this.encode(); }
-  restoreSnapshot(s) { this.assets=JSON.parse(s).assets; this.revision++; }
+  restoreSnapshot(s) { this.restoreState(s); this.revision++; }
 }

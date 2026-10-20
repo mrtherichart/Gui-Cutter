@@ -116,3 +116,9 @@ Pixel adjustment is integrated into the selection strip as four directions and a
 ## v0.2.0 — finished interface geometry
 
 The full editor now uses one shared **5px corner radius** for toolbars, drawers, tabs, buttons, fields, dialogs, cards, crop thumbnails, and precision controls. `--ui-radius` is the sole source of ordinary corner curvature; existing semantic aliases (`--panel-radius`, `--bar-radius`, `--ui-control-radius`) point to it. True circular affordances (slider knobs, close buttons, indicators) use `--ui-round`, while straight edges remain square. No canvas crop geometry, saved project data, gestures, Android package name, or signing configuration changed.
+
+## v0.2.1 — transparency prototype
+
+Inspector → **Transparency** edits picked background colours without changing `base.png`. No crop selected means image-wide settings, inherited by all crops; with a crop selected, its first transparency edit creates an independent override. Picking a colour temporarily uses the existing canvas, then returns to Inspector. Tolerance and the optional **All matching colours** mode cover connected outside backgrounds and deliberate whole-colour removal. Antialiasing at colour-key boundaries includes background-colour cleanup. The main canvas, thumbnails, normal/nine-slice previews and exported PNGs reflect transparency; large-image canvas previews are reduced resolution while PNG exports use original source pixels.
+
+`ui_slices.json` remains `{image_path, assets}` with an **optional** root `transparency` object and optional per-asset `transparency` objects containing `{colors:["#RRGGBB"], tolerance:20, all:false}`. Existing projects without these fields retain their previous behaviour. Colour settings are included in undo/redo, draft recovery and native/browser exports. Earlier app versions may drop optional settings when saving a newer manifest.

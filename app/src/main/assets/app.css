@@ -698,3 +698,16 @@ body[data-open-drawer="app"] .app-edge-swipe,body[data-open-drawer="sheet"] .app
   :root{--ui-control-touch:36px;}
   .selection-strip.precision-active{padding-inline:4px;}
 }
+
+/* Inspector transparency uses existing panels and field styling. */
+.transparency-section summary{cursor:pointer;font-size:13px;font-weight:650;display:flex;align-items:center;justify-content:space-between;gap:10px;list-style-position:inside;}
+.transparency-section summary span{font-size:11px;color:var(--caption-ink);font-weight:400;}
+.transparency-body{padding-top:12px;}
+.transparency-colors{display:flex;flex-wrap:wrap;gap:7px;min-height:32px;align-items:center;}
+.transparency-swatch{display:flex;gap:5px;align-items:center;min-height:34px;padding:4px 7px;background:rgba(var(--glass-rgb),.16);border:1px solid var(--panel-line);border-radius:var(--ui-radius);color:var(--surface-ink);font-size:11px;}
+.transparency-swatch i{width:22px;height:22px;border:1px solid var(--panel-line);border-radius:var(--ui-radius);flex-shrink:0;}
+.transparency-swatch button{background:none;color:inherit;font-size:18px;line-height:1;border:none;padding:3px;cursor:pointer;}
+.transparency-range{display:grid;grid-template-columns:1fr auto;gap:6px;margin-top:14px;font-size:12px;}
+.transparency-range input{grid-column:1 / -1;width:100%;accent-color:var(--accent);}
+.transparency-section .switch{margin-top:12px;}
+.transparency-section .hint{margin:10px 0 0;font-size:11px;}

@@ -171,7 +171,7 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
         return root().findFile("exports")?.findFile(name.drop(8))?.uri ?: error("Export does not exist")
     }
 
-    private data class Crop(val id: String, val name: String, val x: Int, val y: Int, val w: Int, val h: Int)
+    private data class Crop(val id: String, val name: String, val x: Int, val y: Int, val w: Int, val h: Int, val transparency: JSONObject?)
     private fun parseAssets(array: JSONArray, iw: Int, ih: Int): List<Crop> {
         check(array.length() <= 2000) { "Too many assets" }
         val ids = mutableSetOf<String>()
@@ -194,7 +194,7 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
                 check(l >= 0 && r >= 0 && l+r < w && t >= 0 && b >= 0 && t+b < h) {
                     "Invalid nine-slice margins: $id" }
             }
-            Crop(id,name,x,y,w,h)
+            Crop(id,name,x,y,w,h,a.optJSONObject("transparency"))
         }
     }
     /** Prepare all PNGs in cache before touching the user folder; write manifest last. */
@@ -216,9 +216,13 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
         try {
             for (a in crops) {
                 val crop = Bitmap.createBitmap(bitmap, a.x,a.y,a.w,a.h)
+                val processed = Transparency.apply(crop, a.transparency ?: input.optJSONObject("transparency"))
                 try { File(staging,a.name).outputStream().buffered().use { out ->
-                    check(crop.compress(Bitmap.CompressFormat.PNG,100,out)) { "Failed to encode ${a.id}" }
-                } } finally { if (crop !== bitmap) crop.recycle() }
+                    check(processed.compress(Bitmap.CompressFormat.PNG,100,out)) { "Failed to encode ${a.id}" }
+                } } finally {
+                    if (processed !== crop) processed.recycle()
+                    if (crop !== bitmap) crop.recycle()
+                }
             }
             val export = folder("exports")
             for (a in crops) {
@@ -226,7 +230,9 @@ class ProjectIO(private val context: Context, private val storage: StorageAccess
                 File(staging,a.name).inputStream().use { write(target.uri,it) }
             }
             // The manifest is the source of truth. Never delete unrelated PNG files.
-            val manifest = JSONObject().put("image_path",imageName).put("assets",array).toString(2)
+            val manifest = JSONObject().put("image_path",imageName).put("assets",array).apply {
+                input.optJSONObject("transparency")?.let { put("transparency",it) }
+            }.toString(2)
             val target = file(root(),manifestName,"application/json")
             manifest.byteInputStream(Charsets.UTF_8).use { write(target.uri,it) }
             val current = crops.map { it.name }.toSet()
