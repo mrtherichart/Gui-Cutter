@@ -111,3 +111,8 @@ Developer includes three test buttons for Android's `CLOCK_TICK`, `KEYBOARD_TAP`
 Drawer intent combines gesture displacement, multi-sample velocity and meaningful reversal distance. A tiny direction change while lifting a finger does not invert a deliberate opening; both drawers share axis configuration, touch lifecycle and cancellation. The asset browser and the selected-crop name use the same full-workspace centering operation, independent of whether the sheet happens to be open.
 
 Pixel adjustment is integrated into the selection strip as four directions and a 1/10 px step toggle; the separate floating popup is removed. The Inspector and Fit icons are distinct from navigation and crop creation, and all three bottom toolbar toggles share active/muted styling. CSS variables define common press feedback, sizes, radius, gaps, and state colors. The file format, Android application ID, and signing identity remain unchanged.
+
+
+## v0.2.0 — finished interface geometry
+
+The full editor now uses one shared **5px corner radius** for toolbars, drawers, tabs, buttons, fields, dialogs, cards, crop thumbnails, and precision controls. `--ui-radius` is the sole source of ordinary corner curvature; existing semantic aliases (`--panel-radius`, `--bar-radius`, `--ui-control-radius`) point to it. True circular affordances (slider knobs, close buttons, indicators) use `--ui-round`, while straight edges remain square. No canvas crop geometry, saved project data, gestures, Android package name, or signing configuration changed.

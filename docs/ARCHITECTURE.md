@@ -64,3 +64,8 @@ Precision controls use one open/close helper and consistent touch affordances. A
 `syncToggleButton()` owns the visual and accessible on/off state for edge snapping, crop snapping, and magnifier. CSS custom properties define the shared minimum touch size, pressed scale, response duration, radius, gaps, and active/inactive colors. The compact precision controls are children of the selection strip; no separate glass popup or redundant show/hide logic exists.
 
 Device tests remain necessary for native touch/release feel and actual WebView frame pacing. Browser layout smoke tests cover small portrait and landscape viewports and verify precision targets stay in the bar.
+
+
+## v0.2.0 CSS geometry
+
+Ordinary UI shapes have one radius token: `--ui-radius: 5px`. The existing surface/control aliases resolve to it, including the selection strip and precision actions. Circles use `--ui-round: 50%` and structural flat sides are zero. New UI elements must use these variables rather than hard-coded corner sizes; button tap target dimensions stay unchanged.
