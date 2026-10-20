@@ -166,3 +166,7 @@ compared pixel-for-pixel on the supplied fantasy UI crop.
 The original image and processed transparency preview now use the same source-resolution pixel grid on the zoomable canvas. Previously, a hidden 1.2-megapixel preview reduction resampled larger UI sheets and made pixels appear to move relative to the original image, particularly at high zoom and around selected crop overrides. Both source and crop views now paint the identical visible source-pixel interval, without a second scaling origin. A source-exact preview is limited to 4 megapixels on-device; for larger images the editor preserves the original pixel view and explains that live processing is unavailable, while full-resolution PNG export remains unaffected.
 
 Background removal, edge cleanup, JSON and crop geometry are unchanged. Regression checks include a 1448 × 1086 sheet and fractional positions at 579% zoom.
+
+## v0.2.6 — zoom-aware raster cache
+
+Canvas previews now use lazily generated mipmaps at low zoom and original-resolution pixels at high zoom. The original image and processed transparency canvases use the same global source coordinates and draw only the visible region. A bounded in-memory LRU cache keeps processing results and smaller display levels, avoiding repeated work when panning or changing zoom. Asset thumbnails and the details preview now resize the full-resolution processed result rather than performing removal on already-shrunk pixels. Background removal, edge cleanup, PNG export, JSON, and app identity are unchanged.

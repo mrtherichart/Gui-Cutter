@@ -4,8 +4,9 @@ import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} fro
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
 import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt, tapProgress, drawerAxes, drawerDisplacement} from './drawer-motion.mjs';
-import {BoundedCache, assetListKey, intersectsViewport, visibleCheckerboard, visibleImageRegion, exactPreviewSize, visibleCropRegion} from './editor-performance.mjs';
+import {BoundedCache, assetListKey, intersectsViewport, visibleCheckerboard, visibleImageRegion, visibleCropRegion} from './editor-performance.mjs';
 import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
+import {RasterPyramid,RasterBudgetCache,mipLevelForZoom,rasterSourceRect} from './raster-pyramid.mjs';
 
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
@@ -110,11 +111,13 @@ function processTransparencyPixels(pixels,t){
 }
 function drawSelectionThumb(asset){
   const canvas=$('selection-thumb');if(!state.image||!asset)return;
-  const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.imageSmoothingEnabled=false;
-  const scale=Math.min(canvas.width/asset.w,canvas.height/asset.h);
-  const w=asset.w*scale,h=asset.h*scale;
-  c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(canvas.width-w)/2,(canvas.height-h)/2,w,h);
-  const t=state.project.effectiveTransparency(asset);if(t.colors.length||t.edgeCleanup){const pixels=c.getImageData(0,0,canvas.width,canvas.height);processTransparencyPixels(pixels,t);c.putImageData(pixels,0,0);}
+  const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);
+  const scale=Math.min(canvas.width/asset.w,canvas.height/asset.h),w=asset.w*scale,h=asset.h*scale;
+  const processed=transparencyPreview('crop',asset);
+  const src=processed?.get(mipLevelForZoom(scale,1))??state.image;
+  c.imageSmoothingEnabled=true;
+  if(processed)c.drawImage(src,0,0,src.width,src.height,(canvas.width-w)/2,(canvas.height-h)/2,w,h);
+  else c.drawImage(src,asset.x,asset.y,asset.w,asset.h,(canvas.width-w)/2,(canvas.height-h)/2,w,h);
 }
 function scheduleDraft(){clearTimeout(state.draftTimer);state.draftTimer=setTimeout(()=>{
   if(state.project.dirty){const key='gui-cutter.draft.'+state.projectKey;
@@ -466,37 +469,40 @@ function updatePreviewBackground(){
     button.setAttribute('aria-pressed',String(current));
   }
 }
-// A processed preview must retain the exact source-pixel grid. Never shrink
-// it to meet a memory budget: nearest-neighbour zoom then displays displaced
-// pixels compared with the untouched source. Large previews fall back to the
-// original image; their full-resolution PNG exports remain unchanged.
-const MAX_PIXEL_PREVIEW=4_000_000;
-const transparencyCache = new Map();
-function transparencyPreview(scope='crop', asset=state.project.active){
+// Process each native-resolution raster once per image, crop bounds and colour
+// configuration. Mipmaps are display-only and are built lazily for low zoom.
+const transparencyCache=new RasterBudgetCache();
+let originalPyramid=null;
+const newRaster=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;return c;};
+function transparencyPreview(scope='crop',asset=state.project.active){
   if(!state.image)return null;
-  const imageScope=scope==='image';
-  const a=imageScope?null:asset;
+  const imageScope=scope==='image',a=imageScope?null:asset;
   if(!imageScope&&!a)return null;
-  // During a crop drag the cropped preview changes bounds; keep the source
-  // visible rather than allocating a new full-resolution mask on every move.
   if(!imageScope&&['move','handle'].includes(state.gesture))return null;
   const draft=state.transparencyDraft;
-  const t=draft?.scope===scope&&(imageScope||a===state.project.active) ? draft.config : (imageScope?normalizeTransparency(state.project.transparency):state.project.effectiveTransparency(a));
+  const t=draft?.scope===scope&&(imageScope||a===state.project.active) ? draft.config :
+    (imageScope?normalizeTransparency(state.project.transparency):state.project.effectiveTransparency(a));
   if(!t.colors.length&&!t.edgeCleanup)return null;
   const r=a??{x:0,y:0,w:state.image.naturalWidth,h:state.image.naturalHeight};
-  const key=[scope,state.imageSeq,state.project.revision,a?.asset_id??'',r.x,r.y,r.w,r.h,JSON.stringify(t)].join(':');
-  if(transparencyCache.has(key))return transparencyCache.get(key);
-  // Either preview all source pixels at 1:1 or leave the source untouched;
-  // a reduced bitmap cannot line up with the full-resolution crop renderer.
-  const size=exactPreviewSize(r.w,r.h,MAX_PIXEL_PREVIEW);
-  if(!size)return null;
-  const c=document.createElement('canvas');c.width=size.width;c.height=size.height;
-  const cx=c.getContext('2d',{willReadFrequently:true});cx.imageSmoothingEnabled=false;
-  cx.drawImage(state.image,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
-  try{const pixels=cx.getImageData(0,0,c.width,c.height);processTransparencyPixels(pixels,t);cx.putImageData(pixels,0,0);}
-  catch(e){errorMessage(e);return null;}
-  if(transparencyCache.size>=8)transparencyCache.clear();
-  transparencyCache.set(key,c);return c;
+  // Editing an unrelated crop must not invalidate the processed whole image.
+  const key=[scope,state.imageSeq,a?.asset_id??'',r.x,r.y,r.w,r.h,JSON.stringify(t)].join(':');
+  const cached=transparencyCache.get(key);
+  if(cached)return cached;
+  try{
+    const c=newRaster(r.w,r.h),cx=c.getContext('2d',{willReadFrequently:true});
+    if(!cx)throw new Error('Canvas allocation failed');
+    cx.drawImage(state.image,r.x,r.y,r.w,r.h,0,0,r.w,r.h);
+    const pixels=cx.getImageData(0,0,r.w,r.h);
+    processTransparencyPixels(pixels,t);cx.putImageData(pixels,0,0);
+    return transparencyCache.set(key,new RasterPyramid(c,r.w,r.h,newRaster));
+  }catch(e){log('Transparency preview unavailable',e.message);return null;}
+}
+// Native pixel coordinates are shared by the source and every mipmap level.
+function paintRaster(pyramid,region){
+  const level=mipLevelForZoom(state.view.scale,state.canvasDpr);
+  const bitmap=pyramid.get(level),r=rasterSourceRect(region,pyramid.width,pyramid.height,bitmap.width,bitmap.height);
+  ctx.imageSmoothingEnabled=level>0||state.view.scale*state.canvasDpr<1;
+  ctx.drawImage(bitmap,r.sx,r.sy,r.sw,r.sh,r.dx,r.dy,r.dw,r.dh);
 }
 function transparencyConfig(scope){
   return normalizeTransparency(scope==='image' ? state.project.transparency : state.project.effectiveTransparency());
@@ -528,7 +534,7 @@ function renderTransparency(scope){
   $('transparency-'+scope+'-pick').disabled=!state.image||state.busy||scope==='crop'&&!state.project.active;
   const a=scope==='crop' ? state.project.active : null;
   const r=a??(state.image&&{w:state.image.naturalWidth,h:state.image.naturalHeight});
-  $('transparency-'+scope+'-hint').textContent=r&&r.w*r.h>MAX_PIXEL_PREVIEW?'Large image: live processing unavailable at this size; exported PNGs stay full resolution.':'Live preview on the canvas; pinch to zoom.';
+  $('transparency-'+scope+'-hint').textContent='Live preview on the canvas; pinch to zoom.';
 }
 function pickTransparencyColor(screen){
   if(!state.image)return;
@@ -575,8 +581,7 @@ function redraw(){
     const r=a,tl=r&&v.toScreen(r.x,r.y);
     const rw=r?.w*v.scale,rh=r?.h*v.scale;
     const paintSource=()=>{
-      if(mainPreview)ctx.drawImage(mainPreview,sx,sy,sw,sh,dx,dy,dw,dh);
-      else ctx.drawImage(im,sx,sy,sw,sh,dx,dy,dw,dh);
+      paintRaster(mainPreview??originalPyramid,source);
     };
     if(cropPreview&&tl){
       // Do not paint the opaque source beneath transparent crop pixels.
@@ -590,11 +595,13 @@ function redraw(){
       if(region){
         const {sx,sy,sw,sh,dx,dy,dw,dh}=region;
         ctx.save();ctx.beginPath();ctx.rect(tl.x,tl.y,rw,rh);ctx.clip();
-        ctx.drawImage(cropPreview,sx,sy,sw,sh,dx,dy,dw,dh);
+        paintRaster(cropPreview,region);
         ctx.restore();
       }
     }else paintSource();
+    ctx.imageSmoothingEnabled=false;
     if(settings.showEdges&&state.overlay)ctx.drawImage(state.overlay,sx,sy,sw,sh,dx,dy,dw,dh);
+    transparencyCache.trim();
   }
   for(let i=0;i<state.project.assets.length;i++){
     if(settings.hideUnselected&&i!==state.project.selected)continue;
@@ -679,7 +686,7 @@ async function openImageElement(src,loadManifest=true){
   image.onload=async()=>{
     releaseImageUrl(src);
     if(seq!==state.imageSeq)return;
-    state.image=image;state.imageLoaded=true;
+    state.image=image;state.imageLoaded=true;originalPyramid?.release();originalPyramid=new RasterPyramid(image,image.naturalWidth,image.naturalHeight,newRaster);
     state.project.imageWidth=image.naturalWidth;state.project.imageHeight=image.naturalHeight;
     state.edges=null;state.overlay=null;state.lastTemplateAsset=null;state.transparencyDraft=null;transparencyCache.clear();assetThumbnails.clear();$('empty').hidden=true;
     if(loadManifest&&native){try{const json=native.readManifest();state.project.load(json?JSON.parse(json):{assets:[]});}
@@ -726,17 +733,18 @@ const assetThumbnails=new BoundedCache(120);
 let lastAssetListKey=null;
 let lastAssetSelection=-1;
 function cropThumbnail(asset){
-  const key=[state.imageSeq,state.project.revision,asset.x,asset.y,asset.w,asset.h].join(':');
+  const t=state.project.effectiveTransparency(asset);
+  const key=[state.imageSeq,asset.x,asset.y,asset.w,asset.h,JSON.stringify(t)].join(':');
   if(assetThumbnails.has(key))return assetThumbnails.get(key);
-  const canvas=document.createElement('canvas');canvas.width=96;canvas.height=72;
+  const canvas=newRaster(96,72);
   if(state.image){
-    const c=canvas.getContext('2d',{alpha:true});c.imageSmoothingEnabled=false;
-    const scale=Math.min(96/asset.w,72/asset.h);
-    const w=asset.w*scale,h=asset.h*scale;
-    c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(96-w)/2,(72-h)/2,w,h);
-    const t=state.project.effectiveTransparency(asset);if(t.colors.length||t.edgeCleanup){const px=c.getImageData(0,0,96,72);processTransparencyPixels(px,t);c.putImageData(px,0,0);}
+    const c=canvas.getContext('2d',{alpha:true});c.imageSmoothingEnabled=true;
+    const scale=Math.min(96/asset.w,72/asset.h),w=asset.w*scale,h=asset.h*scale;
+    const processed=transparencyPreview('crop',asset);
+    if(processed){const bmp=processed.get(mipLevelForZoom(scale,1));c.drawImage(bmp,0,0,bmp.width,bmp.height,(96-w)/2,(72-h)/2,w,h);}
+    else c.drawImage(state.image,asset.x,asset.y,asset.w,asset.h,(96-w)/2,(72-h)/2,w,h);
   }
-  assetThumbnails.set(key,canvas);
+  assetThumbnails.set(key,canvas);transparencyCache.trim();
   return canvas;
 }
 function renderList(){
@@ -811,12 +819,14 @@ function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('
   canvas.width=Math.max(1,Math.round(sw*ratio));canvas.height=Math.max(1,Math.round(sh*ratio));
   const pc=canvas.getContext('2d');pc.imageSmoothingEnabled=false;pc.clearRect(0,0,canvas.width,canvas.height);
   const processed=transparencyPreview('crop');
+  const bitmap=processed?.get(mipLevelForZoom(ratio,1));
+  pc.imageSmoothingEnabled=true;
   if(exploded){for(const piece of nineParts(a)){if(piece.w<1||piece.h<1)continue;
     const dx=(piece.x+piece.col*gap)*ratio,dy=(piece.y+piece.row*gap)*ratio;
-    if(processed){const sx=piece.x*processed.width/a.w,sy=piece.y*processed.height/a.h;
-      pc.drawImage(processed,sx,sy,piece.w*processed.width/a.w,piece.h*processed.height/a.h,dx,dy,piece.w*ratio,piece.h*ratio);}
+    if(bitmap){const sx=piece.x*bitmap.width/a.w,sy=piece.y*bitmap.height/a.h;
+      pc.drawImage(bitmap,sx,sy,piece.w*bitmap.width/a.w,piece.h*bitmap.height/a.h,dx,dy,piece.w*ratio,piece.h*ratio);}
     else pc.drawImage(state.image,a.x+piece.x,a.y+piece.y,piece.w,piece.h,dx,dy,piece.w*ratio,piece.h*ratio);}}
-  else if(processed)pc.drawImage(processed,0,0,canvas.width,canvas.height);
+  else if(bitmap)pc.drawImage(bitmap,0,0,canvas.width,canvas.height);
   else pc.drawImage(state.image,a.x,a.y,a.w,a.h,0,0,canvas.width,canvas.height);
   $('preview-label').textContent=`${a.asset_id} · ${a.w} × ${a.h}${exploded?' · exploded preview':''}`;
 }

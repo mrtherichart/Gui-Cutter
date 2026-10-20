@@ -69,3 +69,7 @@ Device tests remain necessary for native touch/release feel and actual WebView f
 ## v0.2.0 CSS geometry
 
 Ordinary UI shapes have one radius token: `--ui-radius: 5px`. The existing surface/control aliases resolve to it, including the selection strip and precision actions. Circles use `--ui-round: 50%` and structural flat sides are zero. New UI elements must use these variables rather than hard-coded corner sizes; button tap target dimensions stay unchanged.
+
+## Display raster levels
+
+`raster-pyramid.mjs` provides lazy 2× display reductions, source-pixel-aligned viewport drawing, and a byte-bounded in-memory cache. The original image and colour-processed canvases share one zoom-to-level rule based on physical screen pixels. RGB-key selection and edge cleanup always run at full source resolution before any display reduction. A failed mip allocation reuses a previously available level. PNG export does not use display mipmaps.

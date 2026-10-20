@@ -63,12 +63,6 @@ export class BoundedCache {
   clear(){this.entries.clear();}
 }
 
-/** The preview is either source-exact or absent, never resampled. */
-export function exactPreviewSize(width,height,maxPixels=4_000_000){
-  if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>maxPixels)return null;
-  return {width,height};
-}
-
 /** Region of an asset that intersects the already computed visible source.
  * Source coordinates are local to the asset; destination coordinates share
  * the unchanged global image origin used by visibleImageRegion(). */
