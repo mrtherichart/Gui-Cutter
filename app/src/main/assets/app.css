@@ -617,9 +617,29 @@ html,body {position:fixed;inset:0;width:100%;height:100%;max-width:100%;max-heig
 #inspect-files.plain-refresh{border-radius:50%;flex:0 0 35px;}
 .project-primary-actions button{white-space:normal;line-height:1.25;}
 
-/* Temporary v0.1.12 haptic comparison; visually consistent with Developer controls. */
-.haptic-trial[hidden]{display:none!important;}
-.haptic-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:10px;}
-.haptic-choices button{min-width:0;min-height:48px;border-radius:12px;border:1px solid var(--panel-line);background:var(--panel-field);color:var(--surface-ink);font-size:11px;font-weight:630;padding:7px 3px;touch-action:manipulation;}
-.haptic-choices button.selected{border-color:var(--accent);background:var(--active);color:var(--blue-ink);}
-.haptic-choices button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* v0.1.13: stable feedback and symmetric edge navigation. */
+.app-edge-swipe{position:fixed;left:0;top:0;bottom:0;width:23px;z-index:7;touch-action:pan-y;pointer-events:auto;background:transparent;}
+body[data-open-drawer="app"] .app-edge-swipe,body[data-open-drawer="sheet"] .app-edge-swipe,.clean .app-edge-swipe{pointer-events:none;}
+/* Status messages should not move the user's scroll position while updating. */
+#tab-developer,#tab-settings{overflow-anchor:none;}
+#update-status{min-height:2.8em;}
+#file-list,#project-list{overflow-anchor:none;}
+.magnifier{opacity:0;transition:opacity .09s ease-out;will-change:opacity;}
+.magnifier.is-visible{opacity:1;}
+.magnifier-button.selected{color:var(--active-ink);background:var(--active);}
+/* The same active-state scale is shared by all actual editor controls. */
+.nudge-panel button:not(:disabled),.project-primary-actions button:not(:disabled),.project-secondary-actions button:not(:disabled),.action-row button:not(:disabled){transition:transform .13s ease-out,background-color .12s ease-out;transform-origin:center;}
+.nudge-panel button:active:not(:disabled),.project-primary-actions button:active:not(:disabled),.project-secondary-actions button:active:not(:disabled),.action-row button:active:not(:disabled){transform:scale(.93);background-color:var(--active);}
+.nudge-panel{padding:14px 15px 16px;min-width:222px;max-width:calc(100vw - 30px);bottom:calc(145px + var(--safe-bottom));border-radius:21px;animation:nudge-appear .15s cubic-bezier(.16,1,.3,1) both;}
+@keyframes nudge-appear{from{opacity:.5;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+.nudge-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;font-size:13px;}
+.nudge-header>div{display:flex;flex-direction:column;gap:3px;}
+.nudge-header strong{font-weight:680;}
+.nudge-header small{font-size:10px;color:var(--text-soft);}
+.nudge-header .nudge-close{display:grid;place-items:center;min-width:32px;min-height:32px;border-radius:11px;background:var(--field);}
+.nudge-header .nudge-close .ico{width:14px;height:14px;}
+.nudge-grid{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,47px);gap:5px;justify-content:center;}
+.nudge-grid button{display:grid;place-items:center;min-width:0;min-height:0;border-radius:12px;background:var(--field);border:1px solid var(--hairline);font-size:20px;font-weight:550;touch-action:manipulation;}
+.nudge-grid #nudge-unit{font-size:12px;font-weight:700;background:var(--active);border-color:var(--accent);}
+@media(prefers-reduced-motion:reduce){.magnifier,.nudge-panel{animation:none!important;transition:none!important;}}

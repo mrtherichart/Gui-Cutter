@@ -46,3 +46,11 @@ Tab content switches immediately without entrance opacity or translation. Button
 Opening Workspace requests files asynchronously through the existing Kotlin I/O executor. Results are tagged with the request number and project key, so older results cannot replace a newly opened project's list. Visible lists are constructed in bounded animation-frame batches. Native exports-folder enumeration prefers a single `DocumentsContract` child query, with `DocumentFile` fallback for incompatible providers. Settings/Developer request status asynchronously. Project file data and preview rasterization do not delay the initial tab selection.
 
 Large glass surfaces keep their configured blur, with transform layer preparation limited to active drawer motion; idle closed panels no longer request a persistent promoted layer. Browser timing tests are not a substitute for Android device compositor profiling.
+
+## v0.1.13 startup and interaction parity
+
+The local theme preference is read by the tiny blocking `boot-theme.js` in the document head, before CSS and the editor. Android persists that preference separately for its own startup window and WebView background. A read-only native system-dark query synchronizes initial system mode without waiting for project file I/O.
+
+The side and bottom drawers share gesture start/move/release logic, using direction-sensitive settling and the same small-movement threshold. The left 23 px display edge is an input target even when the app drawer is shut. Native keyboard haptics honor Android touch settings; the previous trial UI has been removed. The magnifier becomes visible only after moving the pointer and uses a two-frame delayed reveal with a brief opacity transition.
+
+The pixel nudge overlay uses one open/close helper and consistent touch affordances. A temporary status line that resized the Developer pane was removed, and dynamic content disables scroll anchoring where updates could otherwise shift nearby controls.

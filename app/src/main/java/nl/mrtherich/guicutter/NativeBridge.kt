@@ -6,8 +6,8 @@ import android.webkit.JavascriptInterface
 class NativeBridge(private val activity: MainActivity) {
     @JavascriptInterface fun appStatus(): String = activity.statusPayload().toString()
     @JavascriptInterface fun setUiTheme(mode: String) = activity.runOnUiThread { activity.applyBars(mode) }
-    @JavascriptInterface fun hapticTick(effect: String) = activity.hapticTick(effect)
-    @JavascriptInterface fun previewHaptic(effect: String) = activity.previewHaptic(effect)
+    @JavascriptInterface fun hapticTick() = activity.hapticTick()
+    @JavascriptInterface fun initialSystemDark(): Boolean = activity.initialSystemDark()
     @JavascriptInterface fun chooseFolder() = activity.runOnUiThread { activity.chooseFolder() }
     @JavascriptInterface fun createProject(name:String) = activity.createProject(name)
     @JavascriptInterface fun openProject(id:String) = activity.openProject(id)

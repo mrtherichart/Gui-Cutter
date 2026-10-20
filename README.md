@@ -10,8 +10,8 @@ A self-contained Android screenshot UI cutter using Kotlin + a packaged JavaScri
 - Two-finger pinch/zoom/pan, one-finger tool modes, a dedicated move grip and screen-size touch handles
 - Undo/redo history (128 snapshots), unsaved badge and manual Save Sync
 - Local recovery drafts, floating translucent tool surfaces, compact selected-asset thumbnail, full-screen Clean Canvas mode
-- Native Android folder picker, persistent folder access, project file inspection and opening exports
-- Daylight, night and system appearance, adjustable glass transparency and blur, motion preferences, and native developer diagnostics
+- Native Android folder picker, persistent folder access, asynchronous project file inspection and opening exports
+- Daylight, night and system appearance before first content paint, adjustable glass transparency and blur, motion preferences, and native developer diagnostics
 - In-app GitHub Release APK updates and exportable rotating logs
 
 ## Workflow
@@ -95,3 +95,13 @@ Tab contents now appear on the first frame, and tap-open/tap-close drawers use s
 ## v0.1.12 — temporary haptic comparison
 
 Developer includes three test buttons for Android's `CLOCK_TICK`, `KEYBOARD_TAP`, and `TEXT_HANDLE_MOVE` effects. Tapping a button previews that effect and selects it for crop snapping for the current app session. Initial selection is Clock tick. The experiment is visible only in the v0.1.12 APK and is not stored in project files or Preferences. Both the test and ordinary snaps honor Android's system touch-feedback setting; the app no longer drives the vibration motor with a hard one-shot pulse. Remove the comparison controls after selecting the preferred effect in a later release.
+
+## v0.1.13 interaction corrections
+
+- Keyboard-style system haptics replace the temporary comparison; no custom vibrator amplitude.
+- A blocking, tiny theme bootstrap sets the saved day/night choice before CSS and the editor initialize. Kotlin remembers the selected theme for the startup window and WebView.
+- Both drawers use the same directional settling rule; the entire left screen edge can open the workspace drawer, matching the bottom drawer's edge gesture.
+- Matching corner/edge dot sizes, softer colored strokes, slightly broader glow and a two-frame magnifier reveal only after movement.
+- Bottom bar now toggles the precision magnifier in place of the redundant asset-list launcher.
+- Pixel adjustment controls use consistent press feedback, geometry and a compact three-way control layout.
+- Dynamic diagnostics do not deliberately animate the content position; the temporary haptic status that could change height is gone.

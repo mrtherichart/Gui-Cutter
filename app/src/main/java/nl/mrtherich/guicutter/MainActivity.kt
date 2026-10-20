@@ -35,12 +35,20 @@ class MainActivity : ComponentActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private var imageCreatesProject = false
     private var barThemeMode = "system"
+    private val themePrefs by lazy { getSharedPreferences("gui-cutter-appearance", MODE_PRIVATE) }
+    private fun selectedDark(): Boolean = when (barThemeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> systemDark()
+    }
+    fun initialSystemDark(): Boolean = systemDark()
     private fun systemDark(): Boolean =
         resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
 
     fun applyBars(mode: String) {
         barThemeMode = if (mode in listOf("system", "light", "dark")) mode else "system"
-        val dark = if (barThemeMode == "system") systemDark() else barThemeMode == "dark"
+        themePrefs.edit().putString("theme-mode", barThemeMode).apply()
+        val dark = selectedDark()
         val color = Color.parseColor(if (dark) "#121C2A" else "#EEF3F7")
         if(::webView.isInitialized)webView.setBackgroundColor(color)
         window.statusBarColor = color
@@ -148,11 +156,13 @@ class MainActivity : ComponentActivity() {
                 } else null
             }).build()
 
+        // Read the last selected theme BEFORE allocating or painting the WebView.
+        barThemeMode = themePrefs.getString("theme-mode", "system")?.takeIf { it in listOf("system", "light", "dark") } ?: "system"
+        val bootColor = Color.parseColor(if(selectedDark()) "#121C2A" else "#EEF3F7")
         WindowCompat.setDecorFitsSystemWindows(window,false)
-        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(
-            Color.parseColor(if(systemDark()) "#121C2A" else "#EEF3F7")))
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(bootColor))
         webView=WebView(this).apply {
-            setBackgroundColor(Color.parseColor(if(systemDark()) "#121C2A" else "#EEF3F7"))
+            setBackgroundColor(bootColor)
             settings.javaScriptEnabled=true
             settings.domStorageEnabled=true
             settings.allowFileAccess=false
@@ -185,7 +195,7 @@ class MainActivity : ComponentActivity() {
         }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         setContentView(webView)
-        applyBars("system")
+        applyBars(barThemeMode)
         WindowInsetsControllerCompat(window,webView).apply {
             systemBarsBehavior=WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
@@ -321,32 +331,14 @@ class MainActivity : ComponentActivity() {
         val message=try { storage.testFolder() }catch(e:Exception){DevLog.write("STORAGE",e.stackTraceToString());"Folder test failed: ${e.message}"}
         sendEvent("workspace",JSONObject().put("message",message))
     }}
-    // Android's system-tuned effects are gentler than a fixed-duration vibrator pulse.
-    // The trial choices are temporary and available only in v0.1.12.
-    private fun playHaptic(kind: String, preview: Boolean) {
-        if (preview && BuildConfig.VERSION_NAME != "0.1.12") return
-        val effect = when (kind) {
-            "clock" -> HapticFeedbackConstants.CLOCK_TICK
-            "keyboard" -> HapticFeedbackConstants.KEYBOARD_TAP
-            "text" -> HapticFeedbackConstants.TEXT_HANDLE_MOVE
-            else -> return
-        }
+    // Standard Android keyboard feedback honors the device's own touch setting.
+    fun hapticTick() {
         runOnUiThread {
             if (isFinishing || isDestroyed || !::webView.isInitialized) return@runOnUiThread
-            try {
-                // Honors the user's Android touch-feedback settings; never force a vibration.
-                val accepted = webView.performHapticFeedback(effect)
-                if (preview) sendEvent("haptic-preview", JSONObject()
-                    .put("effect", kind).put("accepted", accepted))
-            } catch (e: Exception) {
-                DevLog.write("HAPTIC", e.message ?: "Unavailable")
-                if (preview) sendEvent("haptic-preview", JSONObject()
-                    .put("effect", kind).put("accepted", false))
-            }
+            try { webView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+            catch (e: Exception) { DevLog.write("HAPTIC", e.message ?: "Unavailable") }
         }
     }
-    fun hapticTick(kind: String) = playHaptic(kind, false)
-    fun previewHaptic(kind: String) = playHaptic(kind, true)
     fun exportLog()=logExporter.launch("Gui-Cutter-devlog.txt")
     override fun onDestroy() {
         updates.close();io.shutdown()

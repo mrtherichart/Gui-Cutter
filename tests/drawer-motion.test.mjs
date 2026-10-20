@@ -63,3 +63,18 @@ test('tap animation responds immediately and settles within short durations',()=
     assert.ok(to>from?moved>from:moved<from);
   }
 });
+
+
+test('symmetric deliberate opening and closing at partial progress',()=>{
+  for(const span of [300,480]){
+    const opening=track([[0,0],[48,180]]);
+    const closing=track([[span,0],[span-48,180]]);
+    assert.equal(settleTarget(.24,opening,span,{signedTravel:44,startProgress:0}),1);
+    assert.equal(settleTarget(.76,closing,span,{signedTravel:-44,startProgress:1}),0);
+  }
+});
+test('small edge grazes retain original position',()=>{
+  const t=track([[0,0],[3,100]]);
+  assert.equal(settleTarget(.02,t,330,{signedTravel:6,startProgress:0}),0);
+  assert.equal(settleTarget(.98,t,330,{signedTravel:-6,startProgress:1}),1);
+});

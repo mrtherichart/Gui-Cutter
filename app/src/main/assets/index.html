@@ -2,7 +2,8 @@
 <html lang="en"><head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover,user-scalable=no">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; frame-src 'none'">
-  <meta name="theme-color" content="#253e4e">
+  <meta name="theme-color" content="#121C2A">
+  <script src="boot-theme.js"></script>
   <title>Gui Cutter</title><link rel="stylesheet" href="app.css">
 </head><body>
   <svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16 M4 12h16 M4 17h16"/></symbol>
@@ -58,11 +59,12 @@
         <button id="snap" class="snap-button selected" type="button" title="Image edge snapping" aria-label="Toggle image edge snapping" aria-pressed="true"><svg class="ico" aria-hidden="true"><use href="#i-magnet"></use></svg></button>
         <button id="crop-snap" class="snap-button" type="button" title="Crop alignment snapping" aria-label="Toggle crop alignment snapping" aria-pressed="false"><svg class="ico" aria-hidden="true"><use href="#i-crop-align"></use></svg></button>
         <span class="separator subtle"></span>
-        <button id="assets-btn" class="icon-button assets-button" title="Assets" aria-label="Open asset list"><svg class="ico" aria-hidden="true"><use href="#i-assets"></use></svg></button>
+        <button id="toggle-magnifier" class="icon-button magnifier-button" type="button" title="Toggle precision magnifier" aria-label="Toggle precision magnifier" aria-pressed="true"><svg class="ico" aria-hidden="true"><use href="#i-zoom"></use></svg></button>
       </nav>
       <div id="status" class="status" role="status" aria-live="polite" hidden></div>
       <button id="clean-restore" class="clean-restore" hidden title="Restore editor controls">Show tools</button>
     </div>
+    <div id="app-edge-swipe" class="app-edge-swipe" aria-hidden="true"></div>
     <div id="shade" class="shade" aria-hidden="true"></div>
     <!-- Application navigation remains on the left in every orientation. -->
     <aside id="app-drawer" class="drawer app-drawer" aria-label="Application drawer" aria-hidden="true">
@@ -133,7 +135,7 @@
             <label class="switch"><span>Smooth motion<small>Polished, lightweight transitions</small></span><input data-setting="smoothMotion" type="checkbox"></label>
             <label class="switch"><span>Smart edge snapping<small>Detect and align to source artwork</small></span><input data-setting="edgeSnap" type="checkbox"></label>
             <label class="switch"><span>Crop alignment snapping<small>Align edges and centers with existing crops</small></span><input data-setting="cropSnap" type="checkbox"></label>
-            <label class="switch"><span>Haptic feedback<small>Light response to snapping and crop completion</small></span><input data-setting="haptics" type="checkbox"></label>
+            <label class="switch"><span>Haptic feedback<small>System-controlled keyboard feedback for interface taps and snapping</small></span><input data-setting="haptics" type="checkbox"></label>
             <label class="switch"><span>Show detected edges<small>Overlay source-image edge detection results</small></span><input data-setting="showEdges" type="checkbox"></label>
             <label class="switch"><span>Hide unselected crops<small>Keep only the selected crop visible</small></span><input data-setting="hideUnselected" type="checkbox"></label>
             <label class="switch"><span>Canvas asset labels<small>Show crop names directly over the image</small></span><input data-setting="labels" type="checkbox"></label>
@@ -149,18 +151,6 @@
           <div class="section-card"><div class="item-row"><span>Application</span><strong id="app-version">Browser</strong></div><div class="item-row"><span>Workspace</span><strong id="app-folder">—</strong></div><div class="item-row"><span>Native logging</span><strong id="log-state">Browser mode</strong></div></div>
           <div class="section-heading"><span>Updates</span><span class="overline">GITHUB RELEASES</span></div>
           <div class="section-card"><div class="action-row"><button id="check-update">Check for updates</button><button id="install-update" class="primary" hidden>Install update</button></div><p id="update-status" class="hint">Signed releases install through Android.</p></div>
-          <div id="haptic-trial" class="haptic-trial" hidden>
-            <div class="section-heading"><span>Haptic comparison</span><span class="overline">V0.1.12 ONLY</span></div>
-            <div class="section-card">
-              <p class="hint">Tap each effect to feel it and use it for crop snapping. The selection resets when the app restarts. Android's touch-feedback setting is respected.</p>
-              <div class="haptic-choices" role="group" aria-label="Test snap haptic effect">
-                <button type="button" data-haptic-trial="clock" aria-pressed="true">Clock tick</button>
-                <button type="button" data-haptic-trial="keyboard" aria-pressed="false">Keyboard tap</button>
-                <button type="button" data-haptic-trial="text" aria-pressed="false">Text handle</button>
-              </div>
-              <p id="haptic-trial-status" class="hint" role="status" aria-live="polite">Clock tick selected for snapping.</p>
-            </div>
-          </div>
           <div class="section-heading"><span>Utilities</span><span class="overline">ON-DEVICE DEBUGGING</span></div>
           <div class="section-card"><div class="action-row"><button id="export-log">Export native log</button><button id="test-folder">Test folder</button></div><div class="action-row"><button id="copy-diagnostics">Copy diagnostics</button><button id="clear-draft">Clear recovery draft</button></div><pre id="diagnostics" class="diagnostics"></pre></div>
         </section>
@@ -191,7 +181,10 @@
         </section>
       </div>
     </aside>
-    <div id="nudge-panel" class="nudge-panel" hidden><div class="nudge-header"><b>Pixel adjustment</b><button id="close-nudge">×</button></div><div class="nudge-grid"><span></span><button data-nudge="0,-1">↑</button><span></span><button data-nudge="-1,0">←</button><button id="nudge-unit">1 px</button><button data-nudge="1,0">→</button><span></span><button data-nudge="0,1">↓</button><span></span></div></div>
+    <div id="nudge-panel" class="nudge-panel" hidden role="group" aria-label="Pixel adjustment">
+      <div class="nudge-header"><div><strong>Pixel adjustment</strong><small>Move the selected crop precisely</small></div><button id="close-nudge" class="nudge-close" type="button" aria-label="Close pixel adjustment"><svg class="ico" aria-hidden="true"><use href="#i-close"></use></svg></button></div>
+      <div class="nudge-grid"><span></span><button data-nudge="0,-1" type="button" aria-label="Move up">↑</button><span></span><button data-nudge="-1,0" type="button" aria-label="Move left">←</button><button id="nudge-unit" type="button" aria-label="Change adjustment step" aria-pressed="false">1 px</button><button data-nudge="1,0" type="button" aria-label="Move right">→</button><span></span><button data-nudge="0,1" type="button" aria-label="Move down">↓</button><span></span></div>
+    </div>
     <div id="magnifier" class="magnifier" hidden><canvas id="magnify-canvas" width="140" height="140"></canvas><span id="magnify-label"></span></div>
     <input id="browser-image" type="file" accept="image/png,image/jpeg,image/webp,image/bmp" hidden><input id="browser-manifest" type="file" accept="application/json,.json" hidden>
   </main>

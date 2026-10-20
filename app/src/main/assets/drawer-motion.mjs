@@ -36,12 +36,17 @@ export class ReleaseTracker {
   }
 }
 
-export function settleTarget(progress,tracker,spanPx){
+export function settleTarget(progress,tracker,spanPx,{signedTravel=0,startProgress=0}={}){
   const p=clamp01(progress),{pixelsPerMs:v,travel}=tracker.velocity();
-  // A clear terminal flick wins, even when the drawer is nearly fully open/closed.
-  if(Math.abs(v)>=.17&&Math.abs(travel)>=7)return v>0?1:0;
-  const projected=p+(v*155)/Math.max(1,spanPx);
-  return projected>=.5?1:0;
+  // Recent reversal beats a long initial pull in the opposite direction.
+  if(Math.abs(v)>=.14&&Math.abs(travel)>=5)return v>0?1:0;
+  // A deliberate pull should complete in its chosen direction even at 20-40% open.
+  // This is symmetric for both edges and for opening/closing.
+  if(Math.abs(signedTravel)>=24)return signedTravel>0?1:0;
+  // Small accidental movements retain the starting state.
+  if(Math.abs(signedTravel)<12 && startProgress!==0)return p>=.5?1:0;
+  const projected=p+(v*125)/Math.max(1,spanPx);
+  return projected>.5?1:0;
 }
 
 // Exact critically damped spring: no oscillation, no overshoot, and frame-rate independent.

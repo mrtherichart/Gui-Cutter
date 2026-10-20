@@ -7,8 +7,6 @@ import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
 
 const $=id=>document.getElementById(id);
 const native=window.NativeAndroid??null;
-// Temporary v0.1.12 on-device haptic comparison. No persisted preference.
-let trialHaptic='clock';
 const settingsKey='gui-cutter.preferences.v1';
 const defaults={edgeSnap:true,cropSnap:false,haptics:true,showEdges:false,hideUnselected:false,labels:false,checkerboard:true,magnifier:true,explodeNine:true,newKind:'normal',theme:'system',glassTransparency:24,glassBlur:20,smoothMotion:true,assetView:'list',gizmoTint:'champagne'};
 let settings={...defaults};
@@ -55,6 +53,8 @@ function updateButtons(){
   $('crop-snap').classList.toggle('selected',settings.cropSnap);$('crop-snap').setAttribute('aria-pressed',String(settings.cropSnap));
   $('project-title').textContent=state.nativeInfo?.projectName || (state.image?'Browser image':'No project');
   $('project-title').title=state.project.dirty?'Unsaved changes':'Project files';
+  $('toggle-magnifier').classList.toggle('selected',settings.magnifier);
+  $('toggle-magnifier').setAttribute('aria-pressed',String(settings.magnifier));
 }
 function refreshUI(){updateButtons();renderList();renderProperties();renderPreview();scheduleDraw();}
 // Live gestures only update the relevant visible controls once per animation frame.
@@ -79,7 +79,7 @@ function resolvedTheme(){
 function applyAppearance(){
   const root=document.documentElement;
   const theme=resolvedTheme();
-  root.dataset.theme=theme;root.dataset.motion=settings.smoothMotion?'on':'off';
+  root.dataset.theme=theme;root.dataset.motion=settings.smoothMotion?'on':'off';root.style.colorScheme=theme;
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content',theme==='dark'?'#121C2A':'#EEF3F7');
   root.style.setProperty('--glass-alpha',String((100-settings.glassTransparency)/100));
   root.style.setProperty('--glass-blur',settings.glassBlur+'px');
@@ -95,7 +95,7 @@ function applyAppearance(){
     const el=$(id);el.style.setProperty('--fill',(100*(el.valueAsNumber-Number(el.min))/(Number(el.max)-Number(el.min)))+'%');
   }
 }
-function saveSettings(){localStorage.setItem(settingsKey,JSON.stringify(settings));applyAppearance();for(const el of document.querySelectorAll('[data-setting]'))el.checked=!!settings[el.dataset.setting];$('setting-kind').value=settings.newKind;$('setting-theme').value=settings.theme;$('explode-preview').checked=settings.explodeNine;updateButtons();scheduleDraw();}
+function saveSettings(){localStorage.setItem(settingsKey,JSON.stringify(settings));if(!settings.magnifier)hideMagnifier();applyAppearance();for(const el of document.querySelectorAll('[data-setting]'))el.checked=!!settings[el.dataset.setting];$('setting-kind').value=settings.newKind;$('setting-theme').value=settings.theme;$('explode-preview').checked=settings.explodeNine;updateButtons();scheduleDraw();}
 function drawSelectionThumb(asset){
   const canvas=$('selection-thumb');if(!state.image||!asset)return;
   const c=canvas.getContext('2d');c.clearRect(0,0,canvas.width,canvas.height);c.imageSmoothingEnabled=false;
@@ -258,7 +258,7 @@ function showTab(tab){
   if(tab==='preview')schedulePreview();
   if(tab==='files' && (changed||opening)){inspectFiles();refreshProjectLibrary();}
   if((tab==='settings'||tab==='developer') && changed && native)nativeCall('requestStatus');
-  if(!app)$('nudge-panel').hidden=true;
+  if(!app){setNudgeOpen(false);}
   return kind;
 }
 function openTab(tab){
@@ -279,6 +279,7 @@ function closeTab(){
   if(!kind)return;
   moveDrawer(kind,0,dragDistance[kind]??1);
 }
+function setNudgeOpen(open){$('nudge-panel').hidden=!open;$('quick-nudge').setAttribute('aria-expanded',String(open));}
 function cleanCanvas(yes){if(yes){stopDrawerAnimation();drawerMotion.active=null;closeTab();}document.body.classList.toggle('clean',yes);$('clean-restore').hidden=!yes;}
 
 function forbiddenGestureTarget(el,kind){
@@ -305,14 +306,15 @@ function beginDrawerTouch(kind,e){
   // A second shelf cannot be dragged while its sibling occupies the workspace.
   if(opening&&currentPanel()&&currentPanel()!==kind)return;
   const grip=kind==='app'?$('side-grip'):$('sheet-grip');
-  if(opening&&!grip.contains(target))return;
+  const edge=kind==='app'&&$('app-edge-swipe').contains(target);
+  if(opening&&!grip.contains(target)&&!edge)return;
   if(!opening&&forbiddenGestureTarget(target,kind))return;
   stopDrawerAnimation();
   const touch=e.changedTouches[0],p=dragDistance[kind]??(opening?0:1);
   drawerMotion.active={
     kind,id:touch.identifier,x:touch.clientX,y:touch.clientY,p,
     startP:p,track:new ReleaseTracker(),mode:null,locked:false,
-    scroll:opening?null:scrollAncestor(target,panel),fromGrip:grip.contains(target),
+    scroll:opening?null:scrollAncestor(target,panel),fromGrip:grip.contains(target)||edge,
     cancelled:false,t0:e.timeStamp
   };
   drawerMotion.active.track.add(p*panelSpan(kind),e.timeStamp);
@@ -363,14 +365,11 @@ function endDrawerTouch(kind,e){
   }
   if(g.mode==='drawer'){
     const p=dragDistance[kind]??g.startP;
-    // The panel surface requires a deliberate swipe; the small grip is more responsive.
-    const gestureTravel=Math.abs(kind==='app'?dx:dy);
-    if(!g.fromGrip&&gestureTravel<30){
-      moveDrawer(kind,g.startP>=.5?1:0,p);e.preventDefault();return;
-    }
-    g.track.add(p*panelSpan(kind),e.timeStamp);
+    // Both drawers use identical directional release rules, whether pulled from an edge or panel.
+    const span=panelSpan(kind);
+    const signedTravel=kind==='app'?dx:-dy;
     const velocity=g.track.velocity().pixelsPerMs;
-    const target=settleTarget(p,g.track,panelSpan(kind));
+    const target=settleTarget(p,g.track,span,{signedTravel,startProgress:g.startP});
     moveDrawer(kind,target,p,velocity,'gesture');
     e.preventDefault();
     return;
@@ -393,6 +392,12 @@ function bindNavigationGestures(){
       if(g?.kind===kind){drawerMotion.active=null;if(g.mode==='drawer')moveDrawer(kind,g.startP>.5?1:0,dragDistance[kind]??g.startP);}
     },{passive:true});
   }
+  // The left edge has the same full-length gesture affordance as the bottom sheet edge.
+  const edge=$('app-edge-swipe');
+  edge.addEventListener('touchstart',e=>beginDrawerTouch('app',e),{passive:true});
+  edge.addEventListener('touchmove',e=>moveDrawerTouch('app',e),{passive:false});
+  edge.addEventListener('touchend',e=>endDrawerTouch('app',e),{passive:false});
+  edge.addEventListener('touchcancel',e=>{if(drawerMotion.active?.kind==='app'){const g=drawerMotion.active;drawerMotion.active=null;if(g.mode==='drawer')moveDrawer('app',g.startP>=.5?1:0,dragDistance.app??g.startP);}}, {passive:true});
   // Any second touch aborts a drawer drag. It can never steal a two-finger image gesture.
   document.addEventListener('touchstart',e=>{
     if(e.touches.length>1){drawerMotion.multi=true;
@@ -402,8 +407,15 @@ function bindNavigationGestures(){
   },{passive:true,capture:true});
   document.addEventListener('touchend',e=>{if(!e.touches.length)drawerMotion.multi=false;},{passive:true,capture:true});
   document.addEventListener('touchcancel',e=>{if(!e.touches.length)drawerMotion.multi=false;},{passive:true,capture:true});
-  $('sheet-grip').addEventListener('keydown',e=>{if(['Escape','Enter',' '].includes(e.key)){e.preventDefault();closeTab();}});
-  $('side-grip').addEventListener('keydown',e=>{if(['Escape','Enter',' '].includes(e.key)){e.preventDefault();openTab('files');}});
+  for(const [kind,gripId,tab] of [['app','side-grip','files'],['sheet','sheet-grip','assets']]){
+    const grip=$(gripId);
+    grip.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){e.preventDefault();closeTab();}
+      else if(e.key==='Enter'||e.key===' '){e.preventDefault();panelMap[kind].classList.contains('is-open')?closeTab():openTab(tab);}
+    });
+    // Mouse behavior matches the keyboard; touch movement is owned by the shared gesture handler.
+    grip.addEventListener('pointerup',e=>{if(e.pointerType==='mouse')panelMap[kind].classList.contains('is-open')?closeTab():openTab(tab);});
+  }
 }
 
 function createModal({title,initial='',message='',question=false}){
@@ -451,9 +463,9 @@ function redraw(){
     if(selected){
       const tint=tintChoices[settings.gizmoTint],rect=[tl.x+.5,tl.y+.5,br.x-tl.x,br.y-tl.y];
       // Light-saber optics: distant colored glow, fine colored rim, near-white core.
-      ctx.strokeStyle='rgba('+tint.halo+',.58)';ctx.shadowColor='rgba('+tint.halo+',.67)';
-      ctx.shadowBlur=15;ctx.lineWidth=2.8;ctx.strokeRect(...rect);
-      ctx.shadowBlur=5;ctx.strokeStyle=tint.mid;ctx.lineWidth=1.75;ctx.strokeRect(...rect);
+      ctx.strokeStyle='rgba('+tint.halo+',.37)';ctx.shadowColor='rgba('+tint.halo+',.73)';
+      ctx.shadowBlur=19;ctx.lineWidth=2.5;ctx.strokeRect(...rect);
+      ctx.shadowBlur=7;ctx.strokeStyle='rgba('+tint.halo+',.40)';ctx.lineWidth=1.65;ctx.strokeRect(...rect);
       ctx.shadowBlur=0;ctx.strokeStyle=tint.core;ctx.lineWidth=1.05;ctx.strokeRect(...rect);
       // Graduations remain delicate, never confused with crop handles.
       const rw=br.x-tl.x,rh=br.y-tl.y;
@@ -485,9 +497,9 @@ function redraw(){
       const tint=tintChoices[settings.gizmoTint];
       for(const [name,[hx,hy]] of Object.entries(handles(a))){
         const q=v.toScreen(hx,hy),corner=['tl','tr','bl','br'].includes(name),middle=name.startsWith('edge_'),moving=name==='move';
-        const radius=corner?4.7:middle?2.45:moving?3.6:2.9;
-        ctx.save();ctx.shadowColor='rgba('+tint.halo+',.82)';ctx.shadowBlur=corner?10:6;
-        ctx.fillStyle=tint.core;ctx.strokeStyle=tint.mid;ctx.lineWidth=corner?1.35:1.05;
+        const radius=corner||middle?2.45:moving?3.6:2.9;
+        ctx.save();ctx.shadowColor='rgba('+tint.halo+',.77)';ctx.shadowBlur=7;
+        ctx.fillStyle=tint.core;ctx.strokeStyle='rgba('+tint.halo+',.48)';ctx.lineWidth=1.05;
         ctx.beginPath();ctx.arc(q.x,q.y,radius,0,Math.PI*2);ctx.fill();ctx.stroke();
         ctx.restore();
         if(moving){ctx.save();ctx.strokeStyle='rgba(35,55,71,.76)';ctx.lineWidth=.8;
@@ -664,18 +676,7 @@ function renderPreview(){if(!bottomTabVisible('preview'))return;const canvas=$('
 function tactile(){
   if(!settings.haptics)return;
   // Never fall back to a fixed-amplitude vibration: older motors can make it harsh.
-  try{native?.hapticTick?.(trialHaptic);}catch(e){log('Haptic unavailable',e.message);}
-}
-function selectTrialHaptic(effect){
-  if(!native||state.nativeInfo?.version!=='0.1.12'||!['clock','keyboard','text'].includes(effect))return;
-  trialHaptic=effect;
-  for(const button of document.querySelectorAll('[data-haptic-trial]')){
-    const selected=button.dataset.hapticTrial===effect;
-    button.classList.toggle('selected',selected);
-    button.setAttribute('aria-pressed',String(selected));
-  }
-  $('haptic-trial-status').textContent='Testing '+({clock:'Clock tick',keyboard:'Keyboard tap',text:'Text handle'}[effect])+'…';
-  nativeCall('previewHaptic',effect);
+  try{native?.hapticTick?.();}catch(e){log('Haptic unavailable',e.message);}
 }
 function announceSnap(signature){
   if(!signature){state.snapMemory='';return;}
@@ -766,10 +767,11 @@ function handlePointerMove(e){if(!state.pointers.has(e.pointerId))return;e.preve
     }
     scheduleDraw();return;
   }
-  if(state.gesture==='handle'){const target=screenSnap(p.x,p.y,g.handle);g.modified=true;state.project.assets[g.index]=normalizeAsset(applyCropAlignment(adjust(g.start,g.handle,target.x,target.y,iw,ih),'resize',g.handle,g.index),iw,ih);refreshDuringGesture();showMagnifier(p,target);return;}
+  if(state.gesture==='handle'){if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)<1)return;const target=screenSnap(p.x,p.y,g.handle);g.modified=true;state.project.assets[g.index]=normalizeAsset(applyCropAlignment(adjust(g.start,g.handle,target.x,target.y,iw,ih),'resize',g.handle,g.index),iw,ih);refreshDuringGesture();if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)>=1)showMagnifier(p,target);return;}
   if(state.gesture==='move'){
+    if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)<1)return;
     const pos=state.view.toImage(p.x,p.y);const dx=Math.round(pos.x-g.anchor.x),dy=Math.round(pos.y-g.anchor.y);
-    g.modified=true;state.project.assets[g.index]=applyCropAlignment(move(g.start,dx,dy,iw,ih),'move',null,g.index);refreshDuringGesture();showMagnifier(p,pos);
+    g.modified=true;state.project.assets[g.index]=applyCropAlignment(move(g.start,dx,dy,iw,ih),'move',null,g.index);refreshDuringGesture();if(Math.hypot(p.x-g.screen.x,p.y-g.screen.y)>=1)showMagnifier(p,pos);
   }
 }
 async function finishDraw(r,template=null){state.previewRect=null;if(!r||r.w<2||r.h<2)return;
@@ -800,13 +802,16 @@ function handlePointerEnd(e){if(!state.pointers.has(e.pointerId))return;e.preven
   }
   if(action==='pending-select'){state.project.selected=g.index;rememberTemplate();}
   if(action==='pending-deselect')state.project.selected=-1;
-  if(['move','handle'].includes(action)){rememberTemplate();change();}else refreshUI();
+  if(['move','handle'].includes(action)&&g?.modified){rememberTemplate();change();}else refreshUI();
 }
+let magnifierRevealFrame=0;
 let magnifierFrame=0;
 let magnifierRequest=null;
 function hideMagnifier(){
   if(magnifierFrame)cancelAnimationFrame(magnifierFrame);
-  magnifierFrame=0;magnifierRequest=null;$('magnifier').hidden=true;
+  magnifierFrame=0;magnifierRequest=null;
+  if(magnifierRevealFrame)cancelAnimationFrame(magnifierRevealFrame);magnifierRevealFrame=0;
+  $('magnifier').classList.remove('is-visible');$('magnifier').hidden=true;
 }
 function showMagnifier(screen,imagePt){
   if(!settings.magnifier||!state.image)return;
@@ -826,7 +831,12 @@ function paintMagnifier(screen,imagePt){
   $('magnify-label').textContent=`${x}, ${y} px`;
   const left=screen.x+160<window.innerWidth?screen.x+18:screen.x-166;
   const top=screen.y-180>0?screen.y-180:screen.y+20;
-  box.style.left=limit(left,0,window.innerWidth-150)+'px';box.style.top=limit(top,0,window.innerHeight-177)+'px';box.hidden=false;
+  box.style.left=limit(left,0,window.innerWidth-150)+'px';box.style.top=limit(top,0,window.innerHeight-177)+'px';
+  if(box.hidden){
+    box.classList.remove('is-visible');box.hidden=false;
+    // Two painted frames before starting the gradual reveal, no instant pop-in.
+    magnifierRevealFrame=requestAnimationFrame(()=>{magnifierRevealFrame=requestAnimationFrame(()=>{magnifierRevealFrame=0;if(!box.hidden)box.classList.add('is-visible');});});
+  }
 }
 
 function refreshStatus(payload=null){if(!native){$('app-version').textContent='Browser test';$('app-folder').textContent='Browser mode';$('log-state').textContent='Browser console';return;}
@@ -842,7 +852,7 @@ function refreshStatus(payload=null){if(!native){$('app-version').textContent='B
     $('reload-project').disabled=!info.hasProject;
     $('bundle-project').disabled=!info.hasBase;
     $('log-state').textContent=info.logsEnabled?'Enabled in APK':'Disabled in build';
-    $('haptic-trial').hidden=info.version!=='0.1.12';updateButtons();}
+    updateButtons();}
   catch(e){errorMessage(e);}}
 let filesRequest=0;
 let fileRenderGeneration=0;
@@ -1014,14 +1024,6 @@ function refreshUpdate(data){$('update-status').textContent=data.message||'';$('
 window.GuiCutterReceive=(type,data={})=>{
   try{
     if(type==='status'){refreshStatus(data);return;}
-    if(type==='haptic-preview'){
-      if(data.effect!==trialHaptic)return;
-      const name={clock:'Clock tick',keyboard:'Keyboard tap',text:'Text handle'}[data.effect];
-      $('haptic-trial-status').textContent=data.accepted
-        ? name+' selected for snapping. Android accepted the effect.'
-        : 'No haptic reported. Check Android touch feedback settings or try another effect.';
-      return;
-    }
     if(type==='system-theme'){state.nativeInfo=state.nativeInfo||{};state.nativeInfo.systemDark=!!data.dark;if(settings.theme==='system'){applyAppearance();scheduleDraw();}return;}
     if(type==='workspace'){
       if(data.message)toast(data.message);refreshStatus();
@@ -1062,7 +1064,7 @@ window.GuiCutterReceive=(type,data={})=>{
 window.GuiCutterHandleBack=()=>{
   const dlg=document.querySelector('dialog[open]');if(dlg){dlg.close('cancel');return true;}
   if(isAnyDrawerOpen()){closeTab();return true;}
-  if(!$('nudge-panel').hidden){$('nudge-panel').hidden=true;return true;}
+  if(!$('nudge-panel').hidden){setNudgeOpen(false);return true;}
   if(document.body.classList.contains('clean')){cleanCanvas(false);return true;}
   return false;
 };
@@ -1078,7 +1080,6 @@ function bind(){
   c.addEventListener('wheel',e=>{if(!state.image)return;e.preventDefault();state.view.zoomTo(state.view.scale*(e.deltaY<0?1.25:.8),e.clientX,e.clientY);setZoomLabel();scheduleDraw();},{passive:false});
   for(const el of document.querySelectorAll('[data-mode]'))el.addEventListener('click',()=>{if(el.dataset.mode==='new'){settings.newKind='normal';saveSettings();}chooseMode(el.dataset.mode);toast(el.dataset.mode==='navigate'?'Pan · drag to move the image':el.dataset.mode==='edit'?'Edit · select or adjust a crop':state.project.active?'New · tap to copy selected size, drag for custom':'New · drag to set crop size',2100);});
   for(const el of document.querySelectorAll('[data-tab]'))el.addEventListener('click',()=>openTab(el.dataset.tab));
-  for(const el of document.querySelectorAll('[data-haptic-trial]'))el.addEventListener('click',()=>selectTrialHaptic(el.dataset.hapticTrial));
   for(const el of document.querySelectorAll('[data-setting]'))el.addEventListener('change',()=>{settings[el.dataset.setting]=el.checked;saveSettings();if(el.dataset.setting==='showEdges'&&settings.showEdges)buildOverlay();});
   $('setting-kind').addEventListener('change',e=>{settings.newKind=e.target.value;saveSettings();});
   $('explode-preview').addEventListener('change',e=>{settings.explodeNine=e.target.checked;saveSettings();renderPreview();});
@@ -1097,13 +1098,15 @@ function bind(){
   });
   $('project-btn').addEventListener('click',()=>openTab('files'));
   $('project-title').addEventListener('click',()=>openTab('files'));
-  $('assets-btn').addEventListener('click',()=>openTab('assets'));$('properties-btn').addEventListener('click',()=>openTab('properties'));
+  $('toggle-magnifier').addEventListener('click',()=>{settings.magnifier=!settings.magnifier;saveSettings();});$('properties-btn').addEventListener('click',()=>openTab('properties'));
   $('selection-info').addEventListener('click',()=>openTab('properties'));
 
-  $('quick-nudge').addEventListener('click',()=>{$('nudge-panel').hidden=!$('nudge-panel').hidden;toast('Pixel precision',1300);});
-  $('close-nudge').addEventListener('click',()=>{$('nudge-panel').hidden=true;});
-  $('nudge-unit').addEventListener('click',()=>{state.nudge=state.nudge===1?10:1;$('nudge-unit').textContent=`${state.nudge} px`;});
+  $('quick-nudge').addEventListener('click',()=>{setNudgeOpen($('nudge-panel').hidden);});
+  $('close-nudge').addEventListener('click',()=>{setNudgeOpen(false);});
+  $('nudge-unit').addEventListener('click',()=>{state.nudge=state.nudge===1?10:1;$('nudge-unit').textContent=`${state.nudge} px`;$('nudge-unit').setAttribute('aria-pressed',String(state.nudge===10));});
   for(const el of document.querySelectorAll('[data-nudge]'))el.addEventListener('click',()=>{const [dx,dy]=el.dataset.nudge.split(',').map(Number);applyNudge(dx,dy);});
+  // All interface buttons share system-tuned feedback; a pointer press only fires once.
+  document.addEventListener('pointerdown',e=>{if(e.pointerType!=='mouse'&&e.target.closest('button:not(:disabled)')&&settings.haptics)tactile();},{passive:true,capture:true});
   $('close-drawer').addEventListener('click',closeTab);$('close-app-drawer').addEventListener('click',closeTab);$('shade').addEventListener('click',closeTab);
   $('zoom-range').addEventListener('input',e=>zoomFromSlider(e.target.value));
   $('zoom-label').addEventListener('click',()=>{fitImage();toast('Image fitted to screen',1700);});$('fit').addEventListener('click',()=>{fitImage();toast('Image fitted to screen',1700);});
@@ -1138,7 +1141,7 @@ function bind(){
     else if((e.ctrlKey||e.metaKey)&&key==='z'){e.preventDefault();if(e.shiftKey)state.project.redo();else state.project.undo();refreshUI();scheduleDraft();}
     else if((e.ctrlKey||e.metaKey)&&key==='y'){e.preventDefault();state.project.redo();refreshUI();scheduleDraft();}
     else if(key==='delete'){e.preventDefault();deleteSelected();}else if(key==='f2'){e.preventDefault();renameSelected();}
-    else if(key==='escape'){closeTab();$('nudge-panel').hidden=true;}});
+    else if(key==='escape'){closeTab();setNudgeOpen(false);}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&state.project.dirty)scheduleDraft();});
   window.addEventListener('error',e=>{const msg=`${e.message} at ${e.filename}:${e.lineno}`;log('JS ERROR',msg);if(native)native.jsError(msg);});
   window.addEventListener('unhandledrejection',e=>{const msg=String(e.reason);log('PROMISE ERROR',msg);if(native)native.jsError(msg);});
