@@ -24,7 +24,7 @@ Native methods are exposed only to bundled first-party pages. No broad storage p
 - An 8 px spacing rhythm defines panel padding, card spacing and field groups. Floating toolbars are single-piece controls with icon-only actions, not stacked button cards.
 - `glassTransparency` (0–65%), `glassBlur` (0–36 CSS px), theme (system/night/daylight), and `smoothMotion` are stored locally in `gui-cutter.preferences.v1`. The old `reduceGlass` preference is migrated on first load.
 - Panel transforms use opacity and GPU-friendly transforms; tool gestures and pixel geometry are always immediate, never animated. `prefers-reduced-motion` disables ornamental motion.
-- Native Back first asks the page to close any open dialog, drawer, precision nudge overlay or Clean Canvas mode, before exiting the Activity.
+- Native Back first asks the page to close any open dialog, drawer, precision mode in the selection strip or Clean Canvas mode, before exiting the Activity.
 ## Rendering and lifecycle
 
 The asset library preserves its DOM and preview bitmaps when only selection changes. Geometry, image, or view-mode changes invalidate the list. Off-screen crop decoration is skipped, while a small margin preserves visible handles and glow. The magnifier coalesces pointer moves to one paint per animation frame. Image changes terminate obsolete edge workers, and temporary browser object URLs are released after loading. The source-image geometry and native export are unchanged.
@@ -53,4 +53,14 @@ The local theme preference is read by the tiny blocking `boot-theme.js` in the d
 
 The side and bottom drawers share gesture start/move/release logic, using direction-sensitive settling and the same small-movement threshold. The left 23 px display edge is an input target even when the app drawer is shut. Native keyboard haptics honor Android touch settings; the previous trial UI has been removed. The magnifier becomes visible only after moving the pointer and uses a two-frame delayed reveal with a brief opacity transition.
 
-The pixel nudge overlay uses one open/close helper and consistent touch affordances. A temporary status line that resized the Developer pane was removed, and dynamic content disables scroll anchoring where updates could otherwise shift nearby controls.
+Precision controls use one open/close helper and consistent touch affordances. A temporary status line that resized the Developer pane was removed, and dynamic content disables scroll anchoring where updates could otherwise shift nearby controls.
+
+## v0.1.14 interaction boundaries
+
+`drawer-motion.mjs` owns axis mapping, velocity estimation, and terminal-state decisions for both drawers. The gesture controller in `app.mjs` attaches the same touch listeners to both drawer panels and the exposed left edge; cancellation restores the drawer's starting terminal state. Directional intention wins over minor release wobble, while a substantial sustained reversal is respected. The release estimator includes the final `touchend` coordinates.
+
+`focusAsset()` and `centerSelectedAsset()` are the single focus command, used by the asset browser and selection-name button. Centering always uses the entire canvas, never the currently exposed space above the sheet; `focusTarget` is pure and independently tested.
+
+`syncToggleButton()` owns the visual and accessible on/off state for edge snapping, crop snapping, and magnifier. CSS custom properties define the shared minimum touch size, pressed scale, response duration, radius, gaps, and active/inactive colors. The compact precision controls are children of the selection strip; no separate glass popup or redundant show/hide logic exists.
+
+Device tests remain necessary for native touch/release feel and actual WebView frame pacing. Browser layout smoke tests cover small portrait and landscape viewports and verify precision targets stay in the bar.

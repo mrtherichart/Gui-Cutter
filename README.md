@@ -20,9 +20,9 @@ A self-contained Android screenshot UI cutter using Kotlin + a packaged JavaScri
 2. Open the **left application drawer → Workspace** and choose a workspace folder under Documents or another location allowed by Android.
 3. Import an image. Gui Cutter stores it as **base.png**.
 4. The left rail has **Pan**, **Edit**, **New rectangle**, and **New nine-slice**. Drag the image to create crops, then use handles or the central move grip in Edit mode. Use two fingers to pan/zoom at any time. Double-tap while using Pan to fit the image.
-5. The bottom glass bar has **Fit**, the zoom slider, zoom percentage, **Snap**, and **Assets**. Assets opens the bottom details sheet; tap the selected-asset strip to open **Inspector**, which also offers pixel nudging. Tap the Save icon in the top bar to write `ui_slices.json` and PNG crops to `exports/`. These are ordinary files accessible from Android's file manager.
+5. The bottom glass bar has **Fit image**, the zoom slider and percentage, two independent snapping toggles, and a magnifier toggle. Pull the attached lower drawer grip to open **Assets**, **Inspector**, and **Preview**. Tapping an asset in the library or its name in the selection strip centers it on the full workspace. The separate Inspector button opens numeric geometry controls. The precision icon turns the selection strip into compact directional pixel buttons with a 1/10 px step switch. Tap the Save icon to write `ui_slices.json` and PNG crops to `exports/`.
 
-**Navigation:** The top-left menu opens the **left application drawer** (Workspace, Preferences and Developer). The selected asset and Assets button open the **bottom details sheet** (Assets, Inspector and Preview). Pull the sheet down by its grip or tap outside either drawer to close it; Android Back closes an open panel first.
+**Navigation:** The top-left menu opens the **left application drawer** (Workspace, Preferences and Developer). The attached bottom grip opens the **bottom details sheet** (Assets, Inspector and Preview); the selection strip has a dedicated Inspector button. A partial intentional drawer pull settles in its intended direction, while insignificant release jitter is ignored. Pull a drawer closed by its grip or tap outside it; Android Back closes a dialog or drawer first.
 
 **Appearance:** Open **Menu → Preferences** to choose Follow system, Night or Daylight and set separate live **Transparency (0–65%)** and **Blur intensity (0–36 px)** sliders. Glass sliders affect UI surfaces only; the source image stays pixel-sharp. Smooth motion can be disabled independently and the device’s reduced-motion preference is respected.
 
@@ -105,3 +105,9 @@ Developer includes three test buttons for Android's `CLOCK_TICK`, `KEYBOARD_TAP`
 - Bottom bar now toggles the precision magnifier in place of the redundant asset-list launcher.
 - Pixel adjustment controls use consistent press feedback, geometry and a compact three-way control layout.
 - Dynamic diagnostics do not deliberately animate the content position; the temporary haptic status that could change height is gone.
+
+## v0.1.14 — gesture intention and shared editor controls
+
+Drawer intent combines gesture displacement, multi-sample velocity and meaningful reversal distance. A tiny direction change while lifting a finger does not invert a deliberate opening; both drawers share axis configuration, touch lifecycle and cancellation. The asset browser and the selected-crop name use the same full-workspace centering operation, independent of whether the sheet happens to be open.
+
+Pixel adjustment is integrated into the selection strip as four directions and a 1/10 px step toggle; the separate floating popup is removed. The Inspector and Fit icons are distinct from navigation and crop creation, and all three bottom toolbar toggles share active/muted styling. CSS variables define common press feedback, sizes, radius, gaps, and state colors. The file format, Android application ID, and signing identity remain unchanged.

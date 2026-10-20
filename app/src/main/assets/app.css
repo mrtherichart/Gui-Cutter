@@ -67,7 +67,7 @@ svg.svg-defs { position:absolute;width:0;height:0;overflow:hidden;pointer-events
   -webkit-backdrop-filter:blur(19px) saturate(145%);
   backdrop-filter:blur(19px) saturate(145%);
 }
-.float button { display:flex;align-items:center;justify-content:center;min-width:42px;min-height:42px;border-radius:15px; }
+.float button { display:flex;align-items:center;justify-content:center;min-width:var(--ui-control-min-size);min-height:var(--ui-control-min-size);border-radius:var(--ui-control-radius); }
 .float button:not(:disabled):active { background:var(--hover); }
 .float .icon-button { padding:10px; }
 .top-bar { top:calc(11px + var(--safe-top));left:12px;right:12px;max-width:740px;height:54px;padding:4px 6px;gap:0; }
@@ -106,7 +106,6 @@ svg.svg-defs { position:absolute;width:0;height:0;overflow:hidden;pointer-events
 .snap-button .ico { width:17px;height:17px; }
 .snap-button.selected { color:var(--active-ink); }
 .snap-button:not(.selected) .ico { opacity:.45; }
-.assets-button { color:var(--active-ink); }
 
 
 .status { position:absolute;z-index:9;left:50%;bottom:calc(154px + var(--safe-bottom));transform:translateX(-50%);max-width:90vw;padding:10px 14px;text-align:center;border-radius:16px;background:var(--surface);box-shadow:var(--shadow);font-size:12px; }
@@ -115,12 +114,6 @@ svg.svg-defs { position:absolute;width:0;height:0;overflow:hidden;pointer-events
 .empty h1 { font-size:20px;margin:5px 0 7px; }
 .empty p { font-size:12px;line-height:1.5;color:var(--text-soft); }
 .empty button { min-height:39px;padding:8px 12px;border-radius:13px;margin:3px;background:var(--field);border:1px solid var(--hairline); }
-.nudge-panel { position:absolute;z-index:4;left:50%;bottom:calc(150px + var(--safe-bottom));transform:translateX(-50%);padding:12px;border-radius:23px;background:var(--glass);box-shadow:var(--shadow);border:1px solid var(--glass-border);-webkit-backdrop-filter:blur(22px);backdrop-filter:blur(22px); }
-.nudge-header { display:flex;align-items:center;justify-content:space-between;gap:18px;font-size:12px; }
-.nudge-header button { border-radius:9px;min-width:30px;min-height:30px;font-size:22px; }
-.nudge-grid { display:grid;grid-template-columns:repeat(3,46px);gap:3px; }
-.nudge-grid button { min-height:42px;min-width:42px;border-radius:13px;background:var(--field);font-size:18px; }
-.nudge-grid #nudge-unit { font-size:12px; }
 .magnifier { position:absolute;z-index:4;pointer-events:none;padding:6px;border-radius:17px;background:var(--surface);box-shadow:var(--shadow); }
 .magnifier canvas { display:block;image-rendering:pixelated;border-radius:10px; }
 .magnifier span { display:block;text-align:center;font-size:11px;padding-top:4px;font-variant-numeric:tabular-nums; }
@@ -169,7 +162,7 @@ svg.svg-defs { position:absolute;width:0;height:0;overflow:hidden;pointer-events
   --panel-shadow: 0 24px 70px rgba(0,7,21,.38),0 2px 12px rgba(0,6,18,.25);
 }
 body {font-size:14px;line-height:1.42;font-weight:400;letter-spacing:-.005em;}
-.float,.empty,.nudge-panel,.clean-restore {
+.float,.empty,.clean-restore {
   background-color:rgba(var(--glass-rgb),var(--glass-alpha));
   border:1px solid var(--panel-stroke);
   box-shadow:var(--panel-shadow),inset 0 1px 0 var(--panel-halo);
@@ -178,7 +171,7 @@ body {font-size:14px;line-height:1.42;font-weight:400;letter-spacing:-.005em;}
 }
 .float {border-radius:var(--bar-radius);transition:box-shadow .3s ease, background-color .22s ease;}
 .float button {border-radius:13px;transition:background-color .2s ease,color .2s ease, transform .32s var(--easing);}
-.float button:active:not(:disabled) {transform:scale(.93);}
+.float button:active:not(:disabled) {transform:scale(var(--ui-control-press-scale));}
 .top-bar {height:52px;padding:3px 6px;left:12px;right:12px;}
 .top-actions .save-button:not(:disabled) {background:var(--active);}
 .top-bar #project-title {font-weight:620;letter-spacing:-.018em;}
@@ -258,7 +251,7 @@ body {font-size:14px;line-height:1.42;font-weight:400;letter-spacing:-.005em;}
 .field select {max-width:175px;width:56%;}
 .field input {max-width:205px;}
 .action-row {display:flex;flex-wrap:wrap;gap:8px;margin:13px 0 0;}
-.action-row>button,.tab-pane .apply-button,.quiet-action {border-radius:12px;min-height:42px;padding:9px 11px;font-size:12px;font-weight:630;background:rgba(var(--glass-rgb),.16);border:1px solid var(--panel-line);color:var(--surface-ink);transition:background-color .2s,transform .24s var(--easing);}
+.action-row>button,.tab-pane .apply-button,.quiet-action {border-radius:var(--ui-control-radius);min-height:42px;padding:9px 11px;font-size:12px;font-weight:630;background:rgba(var(--glass-rgb),.16);border:1px solid var(--panel-line);color:var(--surface-ink);transition:background-color .2s,transform .24s var(--easing);}
 .action-row>button {flex:1 1 auto;min-width:80px;}
 .action-row button:active,.tab-pane .apply-button:active,.quiet-action:active {transform:scale(.975);}
 .tab-pane .action-row .primary,.tab-pane button.primary {background:var(--accent);color:white;border-color:transparent;}
@@ -417,7 +410,6 @@ body {font-size:14px;line-height:1.42;font-weight:400;letter-spacing:-.005em;}
 }
 .modal-dialog input,.modal-dialog button {background:var(--panel-field);border-color:var(--panel-line);color:var(--surface-ink);}
 .modal-dialog button.primary {background:var(--accent);color:#fff;border-color:transparent;}
-.nudge-grid button {background:var(--panel-field);}
 .status {background-color:rgba(var(--drawer-rgb),.94);border:1px solid var(--panel-stroke);}
 
 /* v0.1.3 — compact asset library / economical compositor / swipe affordances */
@@ -557,7 +549,7 @@ body[data-open-drawer="sheet"] .app-drawer:not(.is-open) .side-grip {
 .project-current strong {font-size:19px;line-height:1.2;font-weight:650;letter-spacing:-.028em;color:var(--surface-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .project-current small {color:var(--caption-ink);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .project-primary-actions,.project-secondary-actions {display:grid;grid-template-columns:1fr 1fr;gap:9px;min-width:0;}
-.project-primary-actions button {min-width:0;min-height:46px;border-radius:12px;border:1px solid var(--panel-line);font-size:12px;font-weight:620;background:var(--panel-field);color:var(--surface-ink);padding:7px 8px;}
+.project-primary-actions button {min-width:0;min-height:46px;border-radius:var(--ui-control-radius);border:1px solid var(--panel-line);font-size:12px;font-weight:620;background:var(--panel-field);color:var(--surface-ink);padding:7px 8px;}
 .project-primary-actions button.primary {background:var(--accent);color:white;border-color:transparent;}
 .action-glyph {font-size:18px;font-weight:400;vertical-align:-1px;margin-right:3px;}
 .project-secondary-actions button {min-width:0;min-height:37px;padding:7px 9px;text-align:center;font-size:11.5px;color:var(--caption-ink);border-radius:9px;border:1px solid var(--panel-line);background:rgba(var(--glass-rgb),.08);}
@@ -613,7 +605,7 @@ html,body {position:fixed;inset:0;width:100%;height:100%;max-width:100%;max-heig
 .field-hint{display:block;font-size:11px;color:var(--caption-ink);font-weight:400;}
 .status{color:var(--surface-ink);background:rgba(var(--glass-rgb),var(--glass-alpha));border:1px solid var(--glass-border);-webkit-backdrop-filter:blur(var(--glass-blur)) saturate(140%);backdrop-filter:blur(var(--glass-blur)) saturate(140%);box-shadow:var(--shadow),inset 0 1px 0 var(--glass-highlight);}
 .clean .drawer,.clean .shade,.clean .side-grip,.clean .sheet-grip,.clean .drawer-edge{visibility:hidden!important;opacity:0!important;pointer-events:none!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;}
-.clean #magnifier,.clean .nudge-panel{display:none!important;}
+.clean #magnifier{display:none!important;}
 #inspect-files.plain-refresh{border-radius:50%;flex:0 0 35px;}
 .project-primary-actions button{white-space:normal;line-height:1.25;}
 
@@ -627,19 +619,79 @@ body[data-open-drawer="app"] .app-edge-swipe,body[data-open-drawer="sheet"] .app
 #file-list,#project-list{overflow-anchor:none;}
 .magnifier{opacity:0;transition:opacity .09s ease-out;will-change:opacity;}
 .magnifier.is-visible{opacity:1;}
-.magnifier-button.selected{color:var(--active-ink);background:var(--active);}
 /* The same active-state scale is shared by all actual editor controls. */
-.nudge-panel button:not(:disabled),.project-primary-actions button:not(:disabled),.project-secondary-actions button:not(:disabled),.action-row button:not(:disabled){transition:transform .13s ease-out,background-color .12s ease-out;transform-origin:center;}
-.nudge-panel button:active:not(:disabled),.project-primary-actions button:active:not(:disabled),.project-secondary-actions button:active:not(:disabled),.action-row button:active:not(:disabled){transform:scale(.93);background-color:var(--active);}
-.nudge-panel{padding:14px 15px 16px;min-width:222px;max-width:calc(100vw - 30px);bottom:calc(145px + var(--safe-bottom));border-radius:21px;animation:nudge-appear .15s cubic-bezier(.16,1,.3,1) both;}
-@keyframes nudge-appear{from{opacity:.5;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
-.nudge-header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;font-size:13px;}
-.nudge-header>div{display:flex;flex-direction:column;gap:3px;}
-.nudge-header strong{font-weight:680;}
-.nudge-header small{font-size:10px;color:var(--text-soft);}
-.nudge-header .nudge-close{display:grid;place-items:center;min-width:32px;min-height:32px;border-radius:11px;background:var(--field);}
-.nudge-header .nudge-close .ico{width:14px;height:14px;}
-.nudge-grid{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,47px);gap:5px;justify-content:center;}
-.nudge-grid button{display:grid;place-items:center;min-width:0;min-height:0;border-radius:12px;background:var(--field);border:1px solid var(--hairline);font-size:20px;font-weight:550;touch-action:manipulation;}
-.nudge-grid #nudge-unit{font-size:12px;font-weight:700;background:var(--active);border-color:var(--accent);}
-@media(prefers-reduced-motion:reduce){.magnifier,.nudge-panel{animation:none!important;transition:none!important;}}
+@media(prefers-reduced-motion:reduce){.magnifier{animation:none!important;transition:none!important;}}
+
+/* Editor control contracts. Shared sizes, pressed feedback and state colors. */
+:root {
+  --ui-control-min-size: 42px;
+  --ui-control-press-scale: .94;
+  --ui-control-press-speed: 120ms;
+  --ui-control-radius: 12px;
+  --ui-control-gap: 4px;
+  --ui-control-touch: 39px;
+  --ui-control-muted: var(--text-soft);
+  --ui-control-active-ink: var(--active-ink);
+  --ui-control-active-fill: var(--active);
+  --ui-control-field: var(--field);
+}
+.float .icon-button:not(:disabled),
+.selection-strip .precision-actions button:not(:disabled),
+.project-primary-actions button:not(:disabled),
+.project-secondary-actions button:not(:disabled),
+.action-row button:not(:disabled),
+.tab-pane .step-field button:not(:disabled) {
+  transition:transform var(--ui-control-press-speed) ease-out,
+    background-color var(--ui-control-press-speed) ease-out,
+    color var(--ui-control-press-speed) ease-out;
+  transform-origin:center;
+}
+.float .icon-button:active:not(:disabled),
+.selection-strip .precision-actions button:active:not(:disabled),
+.project-primary-actions button:active:not(:disabled),
+.project-secondary-actions button:active:not(:disabled),
+.action-row button:active:not(:disabled),
+.tab-pane .step-field button:active:not(:disabled) {
+  transform:scale(var(--ui-control-press-scale));
+}
+/* All bottom-toolbar toggles share one selected/disabled presentation rule. */
+.bottom-bar .toggle-button:not(.selected) {
+  color:var(--ui-control-muted);
+  background-color:transparent;
+}
+.bottom-bar .toggle-button:not(.selected) .ico{opacity:.6;}
+.bottom-bar .toggle-button.selected {
+  color:var(--ui-control-active-ink);
+  background-color:var(--ui-control-active-fill);
+}
+.selection-strip #quick-nudge.selected {
+  color:var(--ui-control-active-ink);
+  background-color:var(--ui-control-active-fill);
+}
+/* Pixel precision occupies the existing selection bar: no extra floating overlay. */
+.selection-strip.precision-active {gap:var(--ui-control-gap);padding-inline:5px;}
+.selection-strip.precision-active #selection-thumb,
+.selection-strip.precision-active #selection-info,
+.selection-strip.precision-active #properties-btn {display:none!important;}
+.selection-strip .precision-actions {
+  flex:1 1 auto;min-width:0;display:flex;align-items:center;
+  gap:var(--ui-control-gap);
+}
+.selection-strip .precision-actions button {
+  flex:1 1 0;min-width:0;
+  height:var(--ui-control-touch);min-height:var(--ui-control-touch);
+  padding:0;display:grid;place-items:center;
+  border-radius:var(--ui-control-radius);
+  border:1px solid var(--hairline);
+  color:var(--text);background:var(--ui-control-field);
+  font-size:19px;font-weight:550;touch-action:manipulation;
+}
+.selection-strip .precision-actions #nudge-unit {
+  flex:1.12 1 0;font-size:11px;font-weight:700;
+  color:var(--ui-control-active-ink);
+  background:var(--ui-control-active-fill);
+}
+@media(max-height:480px) and (orientation:landscape){
+  :root{--ui-control-touch:36px;}
+  .selection-strip.precision-active{padding-inline:4px;}
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ReleaseTracker,lockedAxis,settleTarget,springAt,tapProgress} from '../app/src/main/assets/drawer-motion.mjs';
+import {ReleaseTracker,lockedAxis,settleTarget,springAt,tapProgress,drawerDisplacement} from '../app/src/main/assets/drawer-motion.mjs';
 
 function track(points){const t=new ReleaseTracker();for(const [x,ms] of points)t.add(x,ms);return t;}
 test('finger axis locking ignores diagonals and small accidental movements',()=>{
@@ -19,11 +19,11 @@ test('fast opening flick wins even at 18% open',()=>{
 });
 test('very small incidental reversal does not close an otherwise opened drawer',()=>{
  const tr=track([[0,0],[250,300],[252,420],[247,490]]);
- assert.equal(settleTarget(.79,tr,320),1);
+ assert.equal(settleTarget(.79,tr,320,{signedTravel:247,startProgress:0}),1);
 });
-test('short deliberate touch settles by position',()=>{
- assert.equal(settleTarget(.23,track([[0,0],[3,100]]),360),0);
- assert.equal(settleTarget(.77,track([[0,0],[3,100]]),360),1);
+test('an ambiguous touch stays in the drawer start state',()=>{
+ assert.equal(settleTarget(.23,track([[0,0],[3,100]]),360,{signedTravel:3,startProgress:0}),0);
+ assert.equal(settleTarget(.77,track([[360,0],[357,100]]),360,{signedTravel:-3,startProgress:1}),1);
 });
 test('zero travel is inert and the tracker never invents velocity',()=>{
  const tr=track([[0,0]]);assert.deepEqual(tr.velocity(),{pixelsPerMs:0,travel:0});
@@ -77,4 +77,33 @@ test('small edge grazes retain original position',()=>{
   const t=track([[0,0],[3,100]]);
   assert.equal(settleTarget(.02,t,330,{signedTravel:6,startProgress:0}),0);
   assert.equal(settleTarget(.98,t,330,{signedTravel:-6,startProgress:1}),1);
+});
+
+
+test('opening intent survives a 7-pixel sloppy finger lift, for both drawer axes',()=>{
+ for(const [kind,dx,dy] of [['app',73,0],['sheet',0,-73]]){
+   assert.equal(drawerDisplacement(kind,dx,dy),73);
+   const t=track([[0,0],[24,90],[65,160],[73,205],[66,230]]);
+   assert.equal(settleTarget(66/350,t,350,{signedTravel:66,startProgress:0}),1);
+ }
+});
+test('closing intent mirrors opening intent even with final opposite motion',()=>{
+ for(const span of [300,450]){
+  const t=track([[span,0],[span-30,90],[span-84,190],[span-79,215]]);
+  assert.equal(settleTarget((span-79)/span,t,span,{signedTravel:-79,startProgress:1}),0);
+ }
+});
+test('substantial sustained reversal overrides original direction',()=>{
+ const t=track([[0,0],[100,100],[260,220],[245,260],[205,315],[180,360]]);
+ assert.equal(settleTarget(180/350,t,350,{signedTravel:180,startProgress:0}),0);
+});
+test('large slow deliberate pulls finish without requiring fling speed',()=>{
+ const t=track([[0,0],[12,200],[36,450],[52,700]]);
+ assert.equal(settleTarget(52/380,t,380,{signedTravel:52,startProgress:0}),1);
+});
+test('microscopic touch jitter does not open or close either drawer',()=>{
+ const o=track([[0,0],[5,90],[0,160],[4,185]]);
+ const c=track([[370,0],[365,90],[369,160],[366,185]]);
+ assert.equal(settleTarget(4/370,o,370,{signedTravel:4,startProgress:0}),0);
+ assert.equal(settleTarget(366/370,c,370,{signedTravel:-4,startProgress:1}),1);
 });

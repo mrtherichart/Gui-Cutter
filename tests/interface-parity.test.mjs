@@ -34,13 +34,13 @@ test('magnifier toggle replaces asset launcher, and is only revealed by movement
 });
 test('side and bottom drawer use common gesture handlers; full left edge is actionable',()=>{
   assert.match(html,/id="app-edge-swipe"/);
-  assert.match(js,/beginDrawerTouch\('app',e\)/);
-  assert.match(js,/moveDrawerTouch\('app',e\)/);
+  assert.match(js,/attachDrawerGestures\(\$\('app-edge-swipe'\),'app'\)/);
+  assert.match(js,/drawerDisplacement\(kind,dx,dy\)/);
   assert.match(js,/settleTarget\(p,g\.track,span,\{signedTravel,startProgress:g\.startP\}\)/);
   assert.match(css,/\.app-edge-swipe\{position:fixed;left:0;top:0;bottom:0;/);
 });
 test('corner and edge handles have matching radii and centered nudge feedback is reusable',()=>{
   assert.match(js,/corner\|\|middle\?2\.45/);
   assert.match(html,/aria-label="Move left"/);
-  assert.match(css,/\.nudge-panel button:active:not\(:disabled\)/);
+  assert.match(css,/\.selection-strip \.precision-actions button:active:not\(:disabled\)/);
 });

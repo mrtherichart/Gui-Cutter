@@ -1,7 +1,7 @@
 import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} from './model.mjs';
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
-import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt, tapProgress} from './drawer-motion.mjs';
+import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt, tapProgress, drawerAxes, drawerDisplacement} from './drawer-motion.mjs';
 import {BoundedCache, assetListKey, intersectsViewport, visibleCheckerboard, visibleImageRegion} from './editor-performance.mjs';
 import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
 
@@ -49,12 +49,16 @@ function updateButtons(){
   if(a){$('selection-name').textContent=a.asset_id;$('selection-size').textContent=`${a.w} × ${a.h} px${a.kind==='nine_slice'?' · 9-slice':''}`;drawSelectionThumb(a);}
   for(const el of document.querySelectorAll('[data-mode]')){el.classList.toggle('active',el.dataset.mode===state.mode&&(state.mode!=='new'||settings.newKind==='normal'));}
   $('new-kind').classList.toggle('active',state.mode==='new'&&settings.newKind==='nine_slice');
-  $('snap').classList.toggle('selected',settings.edgeSnap);$('snap').setAttribute('aria-pressed',String(settings.edgeSnap));
-  $('crop-snap').classList.toggle('selected',settings.cropSnap);$('crop-snap').setAttribute('aria-pressed',String(settings.cropSnap));
+  syncToggleButton('snap',settings.edgeSnap);
+  syncToggleButton('crop-snap',settings.cropSnap);
   $('project-title').textContent=state.nativeInfo?.projectName || (state.image?'Browser image':'No project');
   $('project-title').title=state.project.dirty?'Unsaved changes':'Project files';
-  $('toggle-magnifier').classList.toggle('selected',settings.magnifier);
-  $('toggle-magnifier').setAttribute('aria-pressed',String(settings.magnifier));
+  syncToggleButton('toggle-magnifier',settings.magnifier);
+  if(!a && !$('selection-precision').hidden)setNudgeOpen(false);
+}
+function syncToggleButton(id,enabled){
+  const el=$(id);el.classList.toggle('selected',enabled);
+  el.setAttribute('aria-pressed',String(enabled));
 }
 function refreshUI(){updateButtons();renderList();renderProperties();renderPreview();scheduleDraw();}
 // Live gestures only update the relevant visible controls once per animation frame.
@@ -113,10 +117,10 @@ function clearDraft(){try{localStorage.removeItem('gui-cutter.draft.'+state.proj
 function change(){state.project.commit();refreshUI();scheduleDraft();}
 function focusAsset(asset){
   if(!asset||!state.image)return;
-  const canvas=$('editor'),sheet=$('drawer');
-  const open=sheet.classList.contains('is-open');
-  const bottom=open?Math.max(140,sheet.getBoundingClientRect().top-canvas.getBoundingClientRect().top):canvas.clientHeight;
-  const target=focusTarget(state.view,asset,{width:canvas.clientWidth,height:canvas.clientHeight,visibleBottom:bottom});
+  // A drawer only overlays the workspace. Focus always means the full image viewport.
+  const canvas=$('editor');
+  const target=focusTarget(state.view,asset,{width:canvas.clientWidth,height:canvas.clientHeight,
+    rightReserve:0,center:true});
   if(!target?.changed)return;
   const from={x:state.view.x,y:state.view.y,scale:state.view.scale},epoch=++state.focusEpoch;
   if(!settings.smoothMotion||matchMedia('(prefers-reduced-motion: reduce)').matches){
@@ -135,7 +139,8 @@ function focusAsset(asset){
   requestAnimationFrame(animate);
 }
 function rememberTemplate(){if(state.project.active)state.lastTemplateAsset={...state.project.active};}
-function selectIndex(i){state.project.selected=i;rememberTemplate();refreshUI();focusAsset(state.project.active);}
+function centerSelectedAsset(){focusAsset(state.project.active);}
+function selectIndex(i){state.project.selected=i;rememberTemplate();refreshUI();centerSelectedAsset();}
 function chooseMode(mode){if(state.gestureData){cancelSingle();state.pointers.clear();hideMagnifier();}state.mode=mode;state.previewRect=null;state.gesture=null;updateButtons();scheduleDraw();}
 const applicationTabs=new Set(['files','settings','developer']);
 const panelMap={app:$('app-drawer'),sheet:$('drawer')};
@@ -279,8 +284,15 @@ function closeTab(){
   if(!kind)return;
   moveDrawer(kind,0,dragDistance[kind]??1);
 }
-function setNudgeOpen(open){$('nudge-panel').hidden=!open;$('quick-nudge').setAttribute('aria-expanded',String(open));}
-function cleanCanvas(yes){if(yes){stopDrawerAnimation();drawerMotion.active=null;closeTab();}document.body.classList.toggle('clean',yes);$('clean-restore').hidden=!yes;}
+function setNudgeOpen(open){
+  const active=!!open&&!!state.project.active;
+  $('selection-precision').hidden=!active;
+  $('selection-strip').classList.toggle('precision-active',active);
+  $('quick-nudge').setAttribute('aria-expanded',String(active));
+  $('quick-nudge').setAttribute('aria-pressed',String(active));
+  $('quick-nudge').classList.toggle('selected',active);
+}
+function cleanCanvas(yes){if(yes){stopDrawerAnimation();drawerMotion.active=null;closeTab();setNudgeOpen(false);}document.body.classList.toggle('clean',yes);$('clean-restore').hidden=!yes;}
 
 function forbiddenGestureTarget(el,kind){
   // Let sliders, editable fields, toggles and ordinary action buttons own their touches.
@@ -299,6 +311,12 @@ function scrollAncestor(el,panel){
   }
   return null;
 }
+function drawerStartingTarget(g){return g.wasOpen?1:0;}
+function cancelDrawerGesture(g){
+  if(!g)return;
+  drawerMotion.active=null;
+  if(g.mode==='drawer')moveDrawer(g.kind,drawerStartingTarget(g),dragDistance[g.kind]??g.startP);
+}
 function beginDrawerTouch(kind,e){
   if(e.touches.length!==1||drawerMotion.multi||drawerMotion.active)return;
   const panel=panelMap[kind],target=e.target;
@@ -313,7 +331,7 @@ function beginDrawerTouch(kind,e){
   const touch=e.changedTouches[0],p=dragDistance[kind]??(opening?0:1);
   drawerMotion.active={
     kind,id:touch.identifier,x:touch.clientX,y:touch.clientY,p,
-    startP:p,track:new ReleaseTracker(),mode:null,locked:false,
+    startP:p,wasOpen:!opening,track:new ReleaseTracker(),mode:null,locked:false,
     scroll:opening?null:scrollAncestor(target,panel),fromGrip:grip.contains(target)||edge,
     cancelled:false,t0:e.timeStamp
   };
@@ -338,11 +356,11 @@ function moveDrawerTouch(kind,e){
       if(!g.fromGrip&&g.scroll&&g.scroll.scrollTop>1){drawerMotion.active=null;return;}
       g.mode='drawer';g.locked=true;
     }else {g.mode='drawer';g.locked=true;}
-    if(g.mode==='drawer'&&g.fromGrip&&g.startP<.01){showTab(kind==='app'?'files':'assets');}
+    if(g.mode==='drawer'&&g.fromGrip&&g.startP<.01){showTab(drawerAxes[kind].tab);}
     if(g.mode==='drawer'){$('shade').classList.add('is-peeking');panelMap[kind].classList.add('gesture-live');}
   }
   if(g.mode==='tabs'){e.preventDefault();return;}
-  const signed=kind==='app'?dx:-dy;
+  const signed=drawerDisplacement(kind,dx,dy);
   const p=clamp01(g.startP+signed/panelSpan(kind));
   renderPanelProgress(kind,p);g.track.add(p*panelSpan(kind),e.timeStamp);
   e.preventDefault();
@@ -351,7 +369,7 @@ function endDrawerTouch(kind,e){
   const g=drawerMotion.active;
   if(!g||g.kind!==kind||![...e.changedTouches].some(t=>t.identifier===g.id))return;
   drawerMotion.active=null;
-  if(g.cancelled||drawerMotion.multi){if(g.mode==='drawer')moveDrawer(kind,g.startP>0.5?1:0,dragDistance[kind]??g.startP);return;}
+  if(g.cancelled||drawerMotion.multi){cancelDrawerGesture(g);return;}
   const finger=[...e.changedTouches].find(t=>t.identifier===g.id);
   const dx=finger.clientX-g.x,dy=finger.clientY-g.y;
   if(g.mode==='tabs'){
@@ -364,10 +382,12 @@ function endDrawerTouch(kind,e){
     return;
   }
   if(g.mode==='drawer'){
-    const p=dragDistance[kind]??g.startP;
-    // Both drawers use identical directional release rules, whether pulled from an edge or panel.
     const span=panelSpan(kind);
-    const signedTravel=kind==='app'?dx:-dy;
+    const signedTravel=drawerDisplacement(kind,dx,dy);
+    // The final lift coordinates can differ from the last touchmove frame.
+    const p=clamp01(g.startP+signedTravel/span);
+    renderPanelProgress(kind,p);
+    g.track.add(p*span,e.timeStamp);
     const velocity=g.track.velocity().pixelsPerMs;
     const target=settleTarget(p,g.track,span,{signedTravel,startProgress:g.startP});
     moveDrawer(kind,target,p,velocity,'gesture');
@@ -376,34 +396,25 @@ function endDrawerTouch(kind,e){
   }
   if(g.fromGrip&&!drawerMotion.multi&&Math.hypot(dx,dy)<12){
     const target=panelMap[kind].classList.contains('is-open')?0:1;
-    if(target===1)showTab(kind==='app'?'files':'assets');
+    if(target===1)showTab(drawerAxes[kind].tab);
     moveDrawer(kind,target,g.startP);
     e.preventDefault();
   }
 }
 function bindNavigationGestures(){
-  for(const kind of ['app','sheet']){
-    const panel=panelMap[kind];
-    panel.addEventListener('touchstart',e=>beginDrawerTouch(kind,e),{passive:true});
-    panel.addEventListener('touchmove',e=>moveDrawerTouch(kind,e),{passive:false});
-    panel.addEventListener('touchend',e=>endDrawerTouch(kind,e),{passive:false});
-    panel.addEventListener('touchcancel',e=>{
-      const g=drawerMotion.active;
-      if(g?.kind===kind){drawerMotion.active=null;if(g.mode==='drawer')moveDrawer(kind,g.startP>.5?1:0,dragDistance[kind]??g.startP);}
+  const attachDrawerGestures=(element,kind)=>{
+    element.addEventListener('touchstart',e=>beginDrawerTouch(kind,e),{passive:true});
+    element.addEventListener('touchmove',e=>moveDrawerTouch(kind,e),{passive:false});
+    element.addEventListener('touchend',e=>endDrawerTouch(kind,e),{passive:false});
+    element.addEventListener('touchcancel',()=>{
+      if(drawerMotion.active?.kind===kind)cancelDrawerGesture(drawerMotion.active);
     },{passive:true});
-  }
-  // The left edge has the same full-length gesture affordance as the bottom sheet edge.
-  const edge=$('app-edge-swipe');
-  edge.addEventListener('touchstart',e=>beginDrawerTouch('app',e),{passive:true});
-  edge.addEventListener('touchmove',e=>moveDrawerTouch('app',e),{passive:false});
-  edge.addEventListener('touchend',e=>endDrawerTouch('app',e),{passive:false});
-  edge.addEventListener('touchcancel',e=>{if(drawerMotion.active?.kind==='app'){const g=drawerMotion.active;drawerMotion.active=null;if(g.mode==='drawer')moveDrawer('app',g.startP>=.5?1:0,dragDistance.app??g.startP);}}, {passive:true});
-  // Any second touch aborts a drawer drag. It can never steal a two-finger image gesture.
+  };
+  for(const kind of Object.keys(drawerAxes))attachDrawerGestures(panelMap[kind],kind);
+  // The full left edge and each physical drawer grip share one event lifecycle.
+  attachDrawerGestures($('app-edge-swipe'),'app');
   document.addEventListener('touchstart',e=>{
-    if(e.touches.length>1){drawerMotion.multi=true;
-      if(drawerMotion.active){const g=drawerMotion.active;drawerMotion.active=null;
-        if(g.mode==='drawer')moveDrawer(g.kind,g.startP>.5?1:0,dragDistance[g.kind]??g.startP);}
-    }
+    if(e.touches.length>1){drawerMotion.multi=true;cancelDrawerGesture(drawerMotion.active);}
   },{passive:true,capture:true});
   document.addEventListener('touchend',e=>{if(!e.touches.length)drawerMotion.multi=false;},{passive:true,capture:true});
   document.addEventListener('touchcancel',e=>{if(!e.touches.length)drawerMotion.multi=false;},{passive:true,capture:true});
@@ -1019,7 +1030,12 @@ async function saveProject(){if(!state.image||state.busy)return;
 }
 async function renameSelected(){const a=state.project.active;if(!a||state.busy)return;const name=await createModal({title:'Rename asset',initial:a.asset_id});if(!name)return;try{state.project.update(state.project.selected,{asset_id:name});refreshUI();scheduleDraft();}catch(e){errorMessage(e);}}
 async function deleteSelected(){const a=state.project.active;if(!a||state.busy)return;const yes=await createModal({title:`Delete ${a.asset_id}?`,message:'The PNG is removed from exports on the next Save Sync.',question:true});if(yes){state.project.deleteSelected();refreshUI();scheduleDraft();}}
-function applyNudge(dx,dy){const a=state.project.active;if(!a||state.busy)return;const {iw,ih}=appCtx();state.project.assets[state.project.selected]=move(a,dx*state.nudge,dy*state.nudge,iw,ih);change();}
+function applyNudge(dx,dy){
+  const a=state.project.active;if(!a||state.busy)return;
+  const {iw,ih}=appCtx(),next=move(a,dx*state.nudge,dy*state.nudge,iw,ih);
+  if(next.x===a.x&&next.y===a.y)return;
+  state.project.assets[state.project.selected]=next;change();
+}
 function refreshUpdate(data){$('update-status').textContent=data.message||'';$('install-update').hidden=!['available','permission'].includes(data.state);if(data.message)toast(data.message);}
 window.GuiCutterReceive=(type,data={})=>{
   try{
@@ -1064,7 +1080,7 @@ window.GuiCutterReceive=(type,data={})=>{
 window.GuiCutterHandleBack=()=>{
   const dlg=document.querySelector('dialog[open]');if(dlg){dlg.close('cancel');return true;}
   if(isAnyDrawerOpen()){closeTab();return true;}
-  if(!$('nudge-panel').hidden){setNudgeOpen(false);return true;}
+  if(!$('selection-precision').hidden){setNudgeOpen(false);return true;}
   if(document.body.classList.contains('clean')){cleanCanvas(false);return true;}
   return false;
 };
@@ -1099,10 +1115,9 @@ function bind(){
   $('project-btn').addEventListener('click',()=>openTab('files'));
   $('project-title').addEventListener('click',()=>openTab('files'));
   $('toggle-magnifier').addEventListener('click',()=>{settings.magnifier=!settings.magnifier;saveSettings();});$('properties-btn').addEventListener('click',()=>openTab('properties'));
-  $('selection-info').addEventListener('click',()=>openTab('properties'));
+  $('selection-info').addEventListener('click',centerSelectedAsset);
 
-  $('quick-nudge').addEventListener('click',()=>{setNudgeOpen($('nudge-panel').hidden);});
-  $('close-nudge').addEventListener('click',()=>{setNudgeOpen(false);});
+  $('quick-nudge').addEventListener('click',()=>{setNudgeOpen($('selection-precision').hidden);});
   $('nudge-unit').addEventListener('click',()=>{state.nudge=state.nudge===1?10:1;$('nudge-unit').textContent=`${state.nudge} px`;$('nudge-unit').setAttribute('aria-pressed',String(state.nudge===10));});
   for(const el of document.querySelectorAll('[data-nudge]'))el.addEventListener('click',()=>{const [dx,dy]=el.dataset.nudge.split(',').map(Number);applyNudge(dx,dy);});
   // All interface buttons share system-tuned feedback; a pointer press only fires once.

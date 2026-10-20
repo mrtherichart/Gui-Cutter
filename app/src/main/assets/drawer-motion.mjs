@@ -2,6 +2,17 @@
 // Distances use pixels; p=0 is fully closed and p=1 is fully open.
 export const clamp01 = n => Math.max(0,Math.min(1,n));
 
+// The two drawer directions differ only by physical axis and opening sign.
+export const drawerAxes=Object.freeze({
+  app:Object.freeze({axis:'x',sign:1,tab:'files'}),
+  sheet:Object.freeze({axis:'y',sign:-1,tab:'assets'})
+});
+export function drawerDisplacement(kind,dx,dy){
+  const cfg=drawerAxes[kind];
+  return cfg.sign*(cfg.axis==='x'?dx:dy);
+}
+
+
 export function lockedAxis(dx,dy,{slop=11,dominance=1.32}={}){
   const x=Math.abs(dx),y=Math.abs(dy);
   if(Math.max(x,y)<slop)return null;
@@ -11,42 +22,53 @@ export function lockedAxis(dx,dy,{slop=11,dominance=1.32}={}){
 }
 
 export class ReleaseTracker {
-  constructor(){this.samples=[];}
+  constructor(){this.samples=[];this.low=Infinity;this.high=-Infinity;}
   add(openPixels,timeMs){
     if(!Number.isFinite(openPixels)||!Number.isFinite(timeMs))return;
     const last=this.samples.at(-1);
     if(last&&timeMs<last.t)return;
-    if(last&&timeMs===last.t){last.x=openPixels;return;}
-    this.samples.push({x:openPixels,t:timeMs});
-    while(this.samples.length>2&&(this.samples[1].t<timeMs-105||this.samples.length>16))this.samples.shift();
+    if(last&&timeMs===last.t){last.x=openPixels;}
+    else this.samples.push({x:openPixels,t:timeMs});
+    this.low=Math.min(this.low,openPixels);
+    this.high=Math.max(this.high,openPixels);
+    // Only recent data is needed for velocity; extrema persist for intent/reversal.
+    while(this.samples.length>2&&(this.samples[1].t<timeMs-135||this.samples.length>20))this.samples.shift();
   }
   velocity(){
     if(this.samples.length<2)return {pixelsPerMs:0,travel:0};
-    const end=this.samples.at(-1);
-    // Recent direction has priority over a long drag in the opposite direction.
-    const cutoff=end.t-80;
-    let first=this.samples.at(-2);
-    for(let i=this.samples.length-2;i>=0;i--){
-      if(this.samples[i].t<cutoff)break;
-      first=this.samples[i];
-    }
-    const dt=end.t-first.t;
-    if(dt<8)return {pixelsPerMs:0,travel:0};
-    return {pixelsPerMs:(end.x-first.x)/dt,travel:end.x-first.x};
+    const end=this.samples.at(-1),recent=this.samples.filter(p=>p.t>=end.t-105);
+    if(recent.length<2)return {pixelsPerMs:0,travel:0};
+    const travel=end.x-recent[0].x,dt=end.t-recent[0].t;
+    if(dt<10)return {pixelsPerMs:0,travel:0};
+    // Regression across the gesture tail is less vulnerable to one noisy release sample.
+    const meanT=recent.reduce((s,p)=>s+p.t,0)/recent.length;
+    const meanX=recent.reduce((s,p)=>s+p.x,0)/recent.length;
+    let num=0,den=0;
+    for(const p of recent){const t=p.t-meanT;num+=t*(p.x-meanX);den+=t*t;}
+    return {pixelsPerMs:den?num/den:0,travel};
   }
 }
 
 export function settleTarget(progress,tracker,spanPx,{signedTravel=0,startProgress=0}={}){
-  const p=clamp01(progress),{pixelsPerMs:v,travel}=tracker.velocity();
-  // Recent reversal beats a long initial pull in the opposite direction.
-  if(Math.abs(v)>=.14&&Math.abs(travel)>=5)return v>0?1:0;
-  // A deliberate pull should complete in its chosen direction even at 20-40% open.
-  // This is symmetric for both edges and for opening/closing.
-  if(Math.abs(signedTravel)>=24)return signedTravel>0?1:0;
-  // Small accidental movements retain the starting state.
-  if(Math.abs(signedTravel)<12 && startProgress!==0)return p>=.5?1:0;
-  const projected=p+(v*125)/Math.max(1,spanPx);
-  return projected>.5?1:0;
+  const p=clamp01(progress),span=Math.max(1,spanPx),{pixelsPerMs:v,travel}=tracker.velocity();
+  const move=Math.abs(signedTravel),direction=Math.sign(signedTravel);
+  const original=startProgress>=.5?1:0;
+  const fling=Math.abs(v)>=.45 && Math.abs(travel)>=18;
+  // A real reversal needs both substantial backtracking and sustained velocity.
+  // The small wobble made while lifting a finger must never reverse a long pull.
+  const backtrack=direction>0?tracker.high-p*span:p*span-tracker.low;
+  const genuineReversal=direction!==0 && Math.sign(v)===-direction &&
+    backtrack>=Math.max(32,span*.11) && Math.abs(v)>=.35;
+  if(move>=24){
+    if(genuineReversal)return direction>0?0:1;
+    return direction>0?1:0;
+  }
+  if(fling)return v>0?1:0;
+  // Short, ambiguous gestures should keep their original state, not flip at 50%.
+  if(move<12)return original;
+  if(p>.65)return 1;
+  if(p<.35)return 0;
+  return original;
 }
 
 // Exact critically damped spring: no oscillation, no overshoot, and frame-rate independent.

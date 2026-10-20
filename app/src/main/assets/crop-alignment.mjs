@@ -49,15 +49,17 @@ export function alignRect(rect,others,{scale=1,tolerancePx=9,exclude=-1,mode='mo
   }
   return {rect:out,guides,found:guides.length>0};
 }
-export function focusTarget(view,crop,{width,height,visibleBottom=height,rightReserve=52}={}){
+export function focusTarget(view,crop,{width,height,visibleBottom=height,rightReserve=52,center=false}={}){
   if(!crop||!width||!height)return null;
   const vw=Math.max(75,width-rightReserve),vh=Math.max(75,Math.min(height,visibleBottom)),pad=22;
   let scale=view.scale;
   const x0=crop.x*scale+view.x,y0=crop.y*scale+view.y;
   const visible=crop.w*scale<vw-2*pad&&crop.h*scale<vh-2*pad&&x0>=pad&&y0>=pad&&x0+crop.w*scale<=vw-pad&&y0+crop.h*scale<=vh-pad;
-  if(visible)return {x:view.x,y:view.y,scale:view.scale,changed:false};
+  if(visible&&!center)return {x:view.x,y:view.y,scale:view.scale,changed:false};
   const fit=Math.min((vw-2*pad)/crop.w,(vh-2*pad)/crop.h);
   if(scale>fit)scale=Math.max(.125,Math.min(scale,fit));
-  else if(Math.max(crop.w*scale,crop.h*scale)<42)scale=Math.min(32,fit,scale*1.7);
-  return {x:vw/2-(crop.x+crop.w/2)*scale,y:vh/2-(crop.y+crop.h/2)*scale,scale,changed:true};
+  else if(!center&&Math.max(crop.w*scale,crop.h*scale)<42)scale=Math.min(32,fit,scale*1.7);
+  const x=vw/2-(crop.x+crop.w/2)*scale,y=vh/2-(crop.y+crop.h/2)*scale;
+  const changed=Math.abs(view.x-x)>.01||Math.abs(view.y-y)>.01||Math.abs(view.scale-scale)>.00001;
+  return {x,y,scale,changed};
 }
