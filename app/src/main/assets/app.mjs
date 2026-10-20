@@ -4,7 +4,7 @@ import {Project, makeAsset, normalizeAsset, verifyAssets, filenameFor, copy} fro
 import {Viewport, limit, handles, hitHandle, hitBorder, adjust, move, rectangle, snap, nineParts} from './geometry.mjs';
 import {alignRect,placeTemplate,focusTarget} from './crop-alignment.mjs';
 import {clamp01, lockedAxis, ReleaseTracker, settleTarget, springAt, tapProgress, drawerAxes, drawerDisplacement} from './drawer-motion.mjs';
-import {BoundedCache, assetListKey, intersectsViewport, visibleCheckerboard, visibleImageRegion} from './editor-performance.mjs';
+import {BoundedCache, assetListKey, intersectsViewport, visibleCheckerboard, visibleImageRegion, exactPreviewSize, visibleCropRegion} from './editor-performance.mjs';
 import {beginPinch,calculatePinch,panDelta} from './pointer-navigation.mjs';
 
 const $=id=>document.getElementById(id);
@@ -466,6 +466,11 @@ function updatePreviewBackground(){
     button.setAttribute('aria-pressed',String(current));
   }
 }
+// A processed preview must retain the exact source-pixel grid. Never shrink
+// it to meet a memory budget: nearest-neighbour zoom then displays displaced
+// pixels compared with the untouched source. Large previews fall back to the
+// original image; their full-resolution PNG exports remain unchanged.
+const MAX_PIXEL_PREVIEW=4_000_000;
 const transparencyCache = new Map();
 function transparencyPreview(scope='crop', asset=state.project.active){
   if(!state.image)return null;
@@ -481,10 +486,11 @@ function transparencyPreview(scope='crop', asset=state.project.active){
   const r=a??{x:0,y:0,w:state.image.naturalWidth,h:state.image.naturalHeight};
   const key=[scope,state.imageSeq,state.project.revision,a?.asset_id??'',r.x,r.y,r.w,r.h,JSON.stringify(t)].join(':');
   if(transparencyCache.has(key))return transparencyCache.get(key);
-  // Preserve source-pixel resolution for UI assets. A large image is reduced
-  // only when needed to limit WebView memory; PNG exports remain full resolution.
-  const scale=Math.min(1,Math.sqrt(1_200_000/(r.w*r.h)));
-  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(r.w*scale));c.height=Math.max(1,Math.round(r.h*scale));
+  // Either preview all source pixels at 1:1 or leave the source untouched;
+  // a reduced bitmap cannot line up with the full-resolution crop renderer.
+  const size=exactPreviewSize(r.w,r.h,MAX_PIXEL_PREVIEW);
+  if(!size)return null;
+  const c=document.createElement('canvas');c.width=size.width;c.height=size.height;
   const cx=c.getContext('2d',{willReadFrequently:true});cx.imageSmoothingEnabled=false;
   cx.drawImage(state.image,r.x,r.y,r.w,r.h,0,0,c.width,c.height);
   try{const pixels=cx.getImageData(0,0,c.width,c.height);processTransparencyPixels(pixels,t);cx.putImageData(pixels,0,0);}
@@ -522,7 +528,7 @@ function renderTransparency(scope){
   $('transparency-'+scope+'-pick').disabled=!state.image||state.busy||scope==='crop'&&!state.project.active;
   const a=scope==='crop' ? state.project.active : null;
   const r=a??(state.image&&{w:state.image.naturalWidth,h:state.image.naturalHeight});
-  $('transparency-'+scope+'-hint').textContent=r&&r.w*r.h>1_200_000?'Large-image preview may be reduced; PNGs export at full resolution.':'Live preview on the canvas; pinch to zoom.';
+  $('transparency-'+scope+'-hint').textContent=r&&r.w*r.h>MAX_PIXEL_PREVIEW?'Large image: live processing unavailable at this size; exported PNGs stay full resolution.':'Live preview on the canvas; pinch to zoom.';
 }
 function pickTransparencyColor(screen){
   if(!state.image)return;
@@ -569,18 +575,24 @@ function redraw(){
     const r=a,tl=r&&v.toScreen(r.x,r.y);
     const rw=r?.w*v.scale,rh=r?.h*v.scale;
     const paintSource=()=>{
-      if(mainPreview){
-        const scaleX=mainPreview.width/iw,scaleY=mainPreview.height/ih;
-        ctx.drawImage(mainPreview,sx*scaleX,sy*scaleY,sw*scaleX,sh*scaleY,dx,dy,dw,dh);
-      }else ctx.drawImage(im,sx,sy,sw,sh,dx,dy,dw,dh);
+      if(mainPreview)ctx.drawImage(mainPreview,sx,sy,sw,sh,dx,dy,dw,dh);
+      else ctx.drawImage(im,sx,sy,sw,sh,dx,dy,dw,dh);
     };
     if(cropPreview&&tl){
       // Do not paint the opaque source beneath transparent crop pixels.
       // The existing checkerboard stays aligned to the original image.
       ctx.save();ctx.beginPath();ctx.rect(0,0,w,h);ctx.rect(tl.x,tl.y,rw,rh);ctx.clip('evenodd');
       paintSource();ctx.restore();
-      ctx.save();ctx.beginPath();ctx.rect(tl.x,tl.y,rw,rh);ctx.clip();
-      ctx.drawImage(cropPreview,tl.x,tl.y,rw,rh);ctx.restore();
+      // Read the crop in the *same source-pixel interval* as paintSource().
+      // This avoids a separate scaling origin when only part of a crop is on
+      // screen, especially at non-integer zoom levels.
+      const region=visibleCropRegion(source,r,p.x,p.y,v.scale);
+      if(region){
+        const {sx,sy,sw,sh,dx,dy,dw,dh}=region;
+        ctx.save();ctx.beginPath();ctx.rect(tl.x,tl.y,rw,rh);ctx.clip();
+        ctx.drawImage(cropPreview,sx,sy,sw,sh,dx,dy,dw,dh);
+        ctx.restore();
+      }
     }else paintSource();
     if(settings.showEdges&&state.overlay)ctx.drawImage(state.overlay,sx,sy,sw,sh,dx,dy,dw,dh);
   }

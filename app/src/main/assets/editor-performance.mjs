@@ -62,3 +62,23 @@ export class BoundedCache {
   }
   clear(){this.entries.clear();}
 }
+
+/** The preview is either source-exact or absent, never resampled. */
+export function exactPreviewSize(width,height,maxPixels=4_000_000){
+  if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width*height>maxPixels)return null;
+  return {width,height};
+}
+
+/** Region of an asset that intersects the already computed visible source.
+ * Source coordinates are local to the asset; destination coordinates share
+ * the unchanged global image origin used by visibleImageRegion(). */
+export function visibleCropRegion(source,asset,imageX,imageY,scale){
+  if(!source||!asset||!Number.isFinite(scale)||scale<=0)return null;
+  const x=Math.max(source.sx,asset.x),y=Math.max(source.sy,asset.y);
+  const right=Math.min(source.sx+source.sw,asset.x+asset.w);
+  const bottom=Math.min(source.sy+source.sh,asset.y+asset.h);
+  if(right<=x||bottom<=y)return null;
+  const sw=right-x,sh=bottom-y;
+  return {sx:x-asset.x,sy:y-asset.y,sw,sh,
+    dx:imageX+x*scale,dy:imageY+y*scale,dw:sw*scale,dh:sh*scale};
+}

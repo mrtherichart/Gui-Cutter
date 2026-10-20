@@ -159,3 +159,10 @@ The optional `edgeCleanup` integer is stored alongside existing transparency
 colours/tolerance in project or per-crop JSON, with normal undo/redo, recovery,
 previews and native PNG export. The JS and Kotlin cleanup passes have been
 compared pixel-for-pixel on the supplied fantasy UI crop.
+
+
+## v0.2.5 — pixel-aligned transparency preview
+
+The original image and processed transparency preview now use the same source-resolution pixel grid on the zoomable canvas. Previously, a hidden 1.2-megapixel preview reduction resampled larger UI sheets and made pixels appear to move relative to the original image, particularly at high zoom and around selected crop overrides. Both source and crop views now paint the identical visible source-pixel interval, without a second scaling origin. A source-exact preview is limited to 4 megapixels on-device; for larger images the editor preserves the original pixel view and explains that live processing is unavailable, while full-resolution PNG export remains unaffected.
+
+Background removal, edge cleanup, JSON and crop geometry are unchanged. Regression checks include a 1448 × 1086 sheet and fractional positions at 579% zoom.
